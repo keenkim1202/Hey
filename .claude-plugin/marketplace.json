@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "hey",
+  "description": "Ledger-driven progress tracking for Claude Code",
+  "owner": {
+    "name": "keen"
+  },
+  "plugins": [
+    {
+      "name": "hey",
+      "description": "Run your work off one markdown ledger: checklist, MD/AI estimates, a morning briefing and an end-of-day record. Start with wassup, end with seeya.",
+      "author": {
+        "name": "keen"
+      },
+      "license": "MIT",
+      "homepage": "https://github.com/keenkim1202/Hey",
+      "repository": "https://github.com/keenkim1202/Hey",
+      "keywords": ["productivity", "ledger", "estimation", "standup", "progress"],
+      "category": "productivity",
+      "source": "./plugins/hey"
+    }
+  ]
+}

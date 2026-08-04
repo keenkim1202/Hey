@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "hey",
+  "description": "Run your work off one markdown ledger: checklist, MD/AI estimates, a morning briefing and an end-of-day record. Start with wassup, end with seeya.",
+  "author": {
+    "name": "keen",
+    "url": "https://github.com/keenkim1202"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/keenkim1202/Hey",
+  "repository": "https://github.com/keenkim1202/Hey",
+  "keywords": ["productivity", "ledger", "estimation", "standup", "progress"],
+  "skills": [
+    "./"
+  ]
+}

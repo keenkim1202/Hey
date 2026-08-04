@@ -1,0 +1,9 @@
+# Python bytecode from running the scripts
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# The ledger is per-user local state and is never committed, including here
+TASKS.local.md

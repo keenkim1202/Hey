@@ -1,0 +1,16 @@
+{
+  "description": "hey — at session start, report only work sitting uncommitted with no PR",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/on-session-start.py\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
