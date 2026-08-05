@@ -63,11 +63,13 @@ LEDGER = """# fixture ledger
 ## Blockers
 
 - [ ] **Server contract** — backend owns this — **needs decision** `[since 2020-01-01]`
+- [ ] **Legacy quirk** — waiting on someone who left `[since unknown]`
+- [ ] **Fresh doubt** — pending, nobody has dated it
 """
 
 # 9 boxes, 4 of them closed. `part two` uses `[X]`, so an implementation that only
 # accepts `[x]` drops it from both halves of that count.
-BOXES = "4/9 boxes"
+BOXES = "4/11 boxes"
 
 WIDTH_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
@@ -218,6 +220,14 @@ assert earned_ai(snap(0.2), snap(0.5)) == 0.3, earned_ai(snap(0.2), snap(0.5))
 old = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 1, 'boxes': 4}}]}}
 new = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 2, 'boxes': 4}}]}}
 assert earned_ai(old, new) == 0.1, earned_ai(old, new)
+
+# `unknown` is a recorded answer, not a missing one: no age, but nothing left to ask.
+by_t = {{x['title']: x for x in led.blockers('2020-01-11')}}
+assert by_t['Legacy quirk']['since'] == 'unknown', by_t['Legacy quirk']
+assert by_t['Legacy quirk']['days'] is None
+# Nothing written at all stays distinguishable from it, which is what the hint counts.
+assert by_t['Fresh doubt']['since'] is None, by_t['Fresh doubt']
+assert by_t['Fresh doubt']['days'] is None
 
 # A blocker's age comes off the line, so it works on a machine with no history at all.
 b = {{x['title']: x for x in led.blockers('2020-01-11')}}['Server contract']
@@ -469,7 +479,9 @@ def main() -> int:
         ([board, "streak"], "streak: uses the project's daily goal", "goal of 0.4"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
-        ([hey, "blockers"], "blockers: lists them all", "1 blocked"),
+        ([hey, "blockers"], "blockers: lists them all", "3 blocked"),
+        ([hey, "blockers"], "blockers: nags only about the unanswered ones",
+         "1 with no start recorded"),
         ([hey, "doctor"], "doctor"),
         ([hey, "scope", "all"], "scope all"),
     ]
@@ -497,10 +509,11 @@ def main() -> int:
         check(label, passed, out if want is None or code else
               f"expected to find {want!r} in:\n{out}")
 
-    # The blocker must be detected in whichever language the ledger uses, and only the
-    # one real blocker -- `Third item` says "depending", which must not count.
+    # Blockers must be detected in whichever language the ledger uses, and only the real
+    # ones -- three sit in the blocker section, while `Third item` says "depending", which
+    # is not `pending` and must not count.
     code, out = run([hey, "batch"], env, proj)
-    check("blocker detection", "1 blocked item(s) excluded" in out, out)
+    check("blocker detection", "3 blocked item(s) excluded" in out, out)
 
     # The session-start hook is the only always-on component, and silence is its default.
     # With no stdin it falls back to the cwd, which is what these two cases exercise.

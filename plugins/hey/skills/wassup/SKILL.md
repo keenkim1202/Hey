@@ -88,7 +88,8 @@ The age comes from `[since YYYY-MM-DD]` on the line, which the card prints besid
 title, or from `carryover` once enough days are recorded. **If neither has a number, say
 the wait is undated rather than describing it as recent** — and offer to date it. An
 undated blocker is the one most likely to be the oldest. `hey.py blockers` lists the ones
-the card counted but did not have room to show.
+the card counted but did not have room to show, and separates a blocker marked
+`[since unknown]` from one nobody has dated yet: only the second is worth offering to fill.
 
 ### One closing line
 

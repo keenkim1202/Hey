@@ -336,7 +336,10 @@ class Ledger:
     # Numeric and `AI`-prefixed, so it cannot be confused with a tag like `[migrated]`.
     KID_AI = re.compile(r"\[AI (\d+\.?\d*)\]")
     # When a blocker started waiting, so its age does not depend on recorded history.
-    SINCE = re.compile(r"\[since (\d{4}-\d{2}-\d{2})\]")
+    # `unknown` is a real answer and not the same as an empty one: it says the start was
+    # looked for and could not be found, which is settled, where a missing marker is a
+    # question nobody has asked yet.
+    SINCE = re.compile(r"\[since (\d{4}-\d{2}-\d{2}|unknown)\]")
     # Which branch an item's work lives on. Branches outlast worktrees, whose paths are
     # temporary, and they are what commits and pull requests actually attach to.
     BRANCH = re.compile(r"\[branch ([^\]\s]+)\]")
@@ -524,7 +527,7 @@ class Ledger:
             if in_section or in_text:
                 m = self.SINCE.search(it["text"])
                 days = None
-                if m:
+                if m and m[1] != "unknown":
                     try:
                         days = (date.fromisoformat(today) - date.fromisoformat(m[1])).days
                     except ValueError:
@@ -1249,13 +1252,19 @@ def cmd_blockers(args, cfg):
             print(f"[{p['name']}] nothing blocked")
             continue
         rows.sort(key=lambda b: -(b["days"] if b["days"] is not None else -1))
-        undated = sum(1 for b in rows if b["days"] is None)
+        # Only the ones nobody has answered are worth nagging about. Counting the settled
+        # `unknown` ones alongside them turns the hint into a permanent line of noise.
+        unasked = sum(1 for b in rows if b["since"] is None)
         print(f"[{p['name']}] {len(rows)} blocked")
         for b in rows:
-            age = f'{b["days"]}d' if b["days"] is not None else "  ?"
+            if b["days"] is not None:
+                age = f'{b["days"]}d'
+            else:
+                age = "?" if b["since"] == "unknown" else "—"
             print(f"  {age:>5}  {clip_to(b['shown'], card_width()[0] - 9)}")
-        if undated:
-            print(f"  {undated} with no start date. Add `[since YYYY-MM-DD]` to age them")
+        if unasked:
+            print(f"  {unasked} with no start recorded. Add `[since YYYY-MM-DD]`, "
+                  f"or `[since unknown]` when it cannot be found")
 
 
 def cmd_notes(args, cfg):

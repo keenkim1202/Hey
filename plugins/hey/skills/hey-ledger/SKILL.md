@@ -123,6 +123,10 @@ Checklist item convention:
   blocker is often older than the ledger. With a date the card shows the wait from day one.
   `hey.py blockers` lists every one of them, oldest first, which is what the card's
   `and N more` points at
+  - **`[since unknown]` when the start cannot be found**, which is a different thing from
+    writing nothing. It records that the question was asked and answered, so `blockers`
+    stops counting it among the ones still to fill in. Prefer it to a guessed date: a date
+    reads as evidence, and one nobody can source is worse than an admitted gap
 
 ## Aggregation
 
