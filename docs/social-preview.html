@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>hey social preview</title>
+<style>
+  /* Source for docs/social-preview.png, GitHub's Social preview slot.
+     Rendered at exactly 1280x640, which is the size GitHub recommends. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background: #14161a;
+    color: #e8e6e3;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 56px;
+    padding: 0 76px;
+    position: relative;
+  }
+  /* One amber hairline down the left edge, the same accent the meters use. */
+  body::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    background: #e3b341;
+  }
+  h1 {
+    font-size: 132px;
+    font-weight: 700;
+    letter-spacing: -0.055em;
+    line-height: 0.9;
+  }
+  .tag {
+    margin-top: 28px;
+    font-size: 32px;
+    line-height: 1.4;
+    font-weight: 400;
+    /* Lighter than the card's grey: this has to survive being scaled down to a
+       link-preview thumbnail, where a low-contrast grey disappears. */
+    color: #c8c4bd;
+  }
+  .tag b { color: #e8e6e3; font-weight: 600; }
+  .meta {
+    margin-top: 38px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .meta span {
+    font: 500 18px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    padding: 9px 14px;
+    border: 1px solid #33373e;
+    border-radius: 6px;
+    color: #b9b5ae;
+  }
+  /* The card is the product, so it is reproduced rather than illustrated. */
+  .card {
+    background: #0e1013;
+    border: 1px solid #2a2e35;
+    border-radius: 12px;
+    padding: 30px 32px;
+    font: 400 17px/1.85 ui-monospace, "SF Mono", Menlo, monospace;
+    white-space: pre;
+    color: #cfcbc4;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+  .card .rule { color: #4a4f57; }
+  .card .k { color: #8b8f97; }
+  .card .a { color: #e3b341; }
+  .card .g { color: #6fbf73; }
+</style>
+<body>
+  <div>
+    <h1>hey</h1>
+    <!-- Explicit break: the bold phrase has to stay on one line. -->
+    <p class="tag">Run your work off<br><b>one markdown ledger</b>.</p>
+    <div class="meta">
+      <span>/wassup</span>
+      <span>/seeya</span>
+      <span>no server</span>
+    </div>
+  </div>
+
+  <!-- No date anywhere: a hardcoded one makes the preview look stale next month. -->
+  <div class="card"><span class="rule">─── ledger ───────────────────────────</span>
+<span class="k">
+ Yesterday</span>  CSV import merged
+<span class="k"> Pick up  </span>  1 commit, no PR
+<span class="k"> Checklist</span>  39 / 163  <span class="a">████</span><span class="rule">░░░░░░░░░░</span>
+<span class="k"> Today    </span>  <span class="g">AI 0.4</span> of 1.0</div>
+</body>

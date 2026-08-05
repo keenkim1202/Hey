@@ -330,6 +330,19 @@ claude plugin validate ./plugins/hey
 **Requirements:** python3 3.9 or newer (which macOS ships) and git. `gh` is used only for
 the PR log; without it that step is skipped.
 
+`docs/social-preview.png` is generated from `docs/social-preview.html`, so the repository's
+link preview is edited as markup rather than in an image editor:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+  --window-size=1280,640 --screenshot=docs/social-preview.png \
+  "file://$PWD/docs/social-preview.html"
+```
+
+That writes 2560x1280 — twice GitHub's recommended 1280x640, which downscales more cleanly
+than rendering at 1x. Upload it under Settings, General, Social preview.
+
 ---
 
 ## FAQ
