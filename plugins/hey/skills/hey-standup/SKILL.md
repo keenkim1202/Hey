@@ -64,6 +64,10 @@ Blocked     Server header contract undecided - waiting on backend since Monday
 If a worktree holds commits with no PR, that belongs on the Today line, first. It is the
 thing most likely to surprise someone else. Point at the branch; do not push it.
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never edit the ledger, check a box, or commit anything

@@ -136,6 +136,10 @@ No commits or PRs were created. The changes are in the working tree
 - Take progress deltas from the script output
 - **Never create a commit, push or PR.** Only when the user asks
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never touch code before the scope is approved

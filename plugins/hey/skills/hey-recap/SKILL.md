@@ -108,6 +108,10 @@ deliverable.
 
 The card carries the same five sections. **Never introduce a number that is not in them.**
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never edit the ledger. A recap is read-only

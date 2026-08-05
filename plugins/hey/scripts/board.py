@@ -369,7 +369,8 @@ RULE = "─"
 DOT = "·"
 
 
-WIDTH = 78  # Card width. Longer lines are clipped so nothing wraps in the terminal.
+WIDTH = 78  # Card width. Longer lines fold rather than wrap in the terminal.
+INDENT = "   "  # Content sits under a section marker, which is two columns plus a space.
 
 
 def head(title: str, right: str = "", width: int = WIDTH) -> str:
@@ -379,7 +380,10 @@ def head(title: str, right: str = "", width: int = WIDTH) -> str:
 
 
 def clip(s: str, width: int = WIDTH) -> str:
-    """Clip by display width. Markdown emphasis is noise in a terminal, so it is stripped."""
+    """Clip by display width. Markdown emphasis is noise in a terminal, so it is stripped.
+
+    For prose use `fold` instead — see why there.
+    """
     s = s.replace("**", "")
     if _w(s) <= width:
         return s
@@ -389,6 +393,61 @@ def clip(s: str, width: int = WIDTH) -> str:
             return out + "…"
         out += c
     return out
+
+
+def _cut(s: str, width: int) -> str:
+    """The longest prefix of `s` that fits, with an ellipsis when something was dropped."""
+    if _w(s) <= width:
+        return s
+    out = ""
+    for c in s:
+        if _w(out) + _w(c) > width - 1:
+            break
+        out += c
+    return out + "…"
+
+
+def _break_lines(text: str, width: int) -> list:
+    """Split on spaces into lines that each fit `width` columns; hard-break long tokens."""
+    out, cur = [], ""
+    for word in text.split():
+        candidate = f"{cur} {word}" if cur else word
+        if _w(candidate) <= width:
+            cur = candidate
+            continue
+        if cur:
+            out.append(cur)
+            cur = ""
+        # A path or a backticked symbol can be longer than the whole line on its own.
+        while _w(word) > width:
+            piece = ""
+            for c in word:
+                if _w(piece) + _w(c) > width:
+                    break
+                piece += c
+            out.append(piece)
+            word = word[len(piece):]
+        cur = word
+    if cur:
+        out.append(cur)
+    return out
+
+
+def fold(text: str, first: str, cont: str, limit: int = 2, width: int = WIDTH) -> list:
+    """Lay prose out over up to `limit` lines instead of cutting it off at one.
+
+    Korean and Japanese take two columns a character, so a 78-column card holds about
+    thirty-five of them. Clipping a sentence there throws the sentence away — the reader
+    gets a subject and no verb. Folding keeps it, and `limit` keeps one long bullet from
+    eating the card.
+    """
+    text = text.replace("**", "")
+    room = width - max(_w(first), _w(cont))
+    body = _break_lines(text, room)
+    kept = body[:limit]
+    if len(body) > limit and kept:
+        kept[-1] = _cut(" ".join(body[limit - 1:]), room)
+    return [(first if i == 0 else cont) + ln for i, ln in enumerate(kept)]
 
 
 def _w(s: str) -> int:
@@ -470,48 +529,60 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     focus = on if mode == "wrap" else prev_workday(date.fromisoformat(on)).isoformat()
     out = [head(p["name"], fmt_date(on))]
 
+    # Bullets fold onto a second line rather than being cut off, so three of them cost
+    # about what five clipped ones did and all three can actually be read.
+    bullet, under = f"{INDENT}{DOT} ", f"{INDENT}  "
+
+    def section(key: str, title: str) -> list:
+        return ["", f"{S.MARK[key]} {title}"]
+
     # -- what happened
     label = (S.card("today_did", LANG) if mode == "wrap"
              else f'{S.card("yesterday", LANG)}  {short_date(focus)}')
     logged = _log_for(led, focus)
-    out += ["", f" {label}"]
+    out += section("log", label)
     if logged:
-        out += [clip(f"   {DOT} {b}") for b in logged[:5]]
+        for b in logged[:3]:
+            out += fold(b, bullet, under)
     else:
         commits = _lines(["git", "log", "--all", f"--since={focus} 00:00",
                           f"--until={focus} 23:59", "--format=%h %s"], root)
-        out += ([clip(f"   {DOT} {c}") for c in commits[:4]] or
-                [f'   {DOT} {S.card("no_record", LANG)}'])
+        if commits:
+            for c in commits[:3]:
+                out += fold(c, bullet, under)
+        else:
+            out.append(f'{bullet}{S.card("no_record", LANG)}')
 
     # -- easily-lost state
     wts = [w for w in _worktree_state(root, base) if w[2] or w[3]]
     if wts:
-        out += ["", " " + S.card("loose" if mode == "wrap" else "resume", LANG)]
+        out += section("resume", S.card("loose" if mode == "wrap" else "resume", LANG))
         for w, br, dirty, ahead in wts[:4]:
             bits = []
             if ahead:
                 bits.append(S.card("commits_no_pr", LANG, n=ahead))
             if dirty:
                 bits.append(S.card("uncommitted", LANG, n=dirty))
-            out.append(clip(f"   {DOT} {w.name}  {br or 'detached'}  {' · '.join(bits)}"))
+            out.append(clip(f"{bullet}{w.name}  {br or 'detached'}  {' · '.join(bits)}"))
             for f in _touched(w, focus):
-                out.append(clip(f"       {f}"))
+                out.append(clip(f"{INDENT}    {f}"))
 
     # -- notes
     notes = _ledger_notes(led, focus if mode == "wrap" else on)
     if notes:
-        out += ["", f' {S.card("notes", LANG)} {len(notes)}']
-        out += [clip(f"   {DOT} {n}") for n in notes[:4]]
+        out += section("notes", f'{S.card("notes", LANG)} {len(notes)}')
+        for n in notes[:3]:
+            out += fold(n, bullet, under)
 
     # -- progress
     remain = round(g["wip_ai"] + g["todo_ai"], 2)
     done_ai = f'{g["done_ai"]:.1f}'
     W, V = 12, 27  # label and value columns, sized so value+unit+denominator all fit
-    out += ["",
-            f' {pad(S.card("checklist", LANG), W)}'
+    out += section("progress", S.card("progress_head", LANG)) + [
+            f'{INDENT}{pad(S.card("checklist", LANG), W)}'
             f'{pad(S.card("boxes_closed", LANG, done=g["cb_done"], total=g["cb_total"]), V)}'
             f'({g["cb_pct"]}%)  {meter(g["cb_done"], g["cb_total"], 18)}',
-            f' {pad(S.card("effort", LANG), W)}'
+            f'{INDENT}{pad(S.card("effort", LANG), W)}'
             f'{pad(S.card("effort_val", LANG, done=done_ai, total=g["total_ai"]), V)}'
             f'{S.card("effort_note", LANG, left=remain, wip=g["wip_ai"])}']
     goal = project_setting(cfg, p, "weekly_goal_ai")
@@ -525,7 +596,7 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
         exp = round(goal * wd / 5, 2)
         gap = round(got - exp, 2)
         pace = S.card("ahead" if gap > 0 else ("behind" if gap < 0 else "on_pace"), LANG)
-        out.append(f' {pad(S.card("week", LANG), W)}'
+        out.append(f'{INDENT}{pad(S.card("week", LANG), W)}'
                    f'{pad(S.card("week_val", LANG, got=got, goal=goal), V)}'
                    f'{S.card("week_note", LANG, gap=abs(gap), pace=pace)}')
 
@@ -533,35 +604,40 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     win = [r for r in rows
            if (date.fromisoformat(focus) - timedelta(days=14)).isoformat() <= r["date"] <= focus]
     if win:
-        out += ["", f' {S.card("results", LANG)}  {short_date(focus)}']
+        out += section("results", f'{S.card("results", LANG)}  {short_date(focus)}')
         for m in ("ai", "code", "tokens"):
             lbl, get, f = METRICS[m]
             scored = [(r["date"], get(r)) for r in win if get(r)]
             mine = next((v for d_, v in scored if d_ == focus), 0)
             best = max(scored, key=lambda x: x[1]) if scored else None
             shown = f(mine) + (f' {S.card("unit_aid", LANG)}' if m == "ai" else "")
-            line = f"   {pad(lbl, 9)}{pad(shown, 20)}"
+            line = f"{INDENT}{pad(lbl, 9)}{pad(shown, 20)}"
             if best:
                 line += S.card("best_on", LANG, val=f(best[1]), date=short_date(best[0]))
             out.append(line)
         scored_ai = [r for r in win if r.get("earned_ai")]
         if len(scored_ai) >= 2:
             top = [ln for ln in leaderboard(win, focus, "ai", 3) if ln]
-            out += [f"   {ln}" for ln in top[1:-1]]
+            out += [f"{INDENT}{ln}" for ln in top[1:-1]]
 
     # -- what is next
     nxt = led.next_up()
     if nxt:
-        out += ["", " " + S.card("tomorrow_next" if mode == "wrap" else "today_next", LANG)]
-        out += [clip(f"   {n}") for n in nxt[:3]]
+        out += section("next", S.card("tomorrow_next" if mode == "wrap"
+                                      else "today_next", LANG))
+        for n in nxt[:3]:
+            out += fold(n, INDENT, f"{INDENT}   ")
 
     # -- blocked
     blocked = led.blockers()
     if blocked:
-        out += ["", f' {S.card("blocked", LANG)} {len(blocked)}']
-        out += [clip(f"   {DOT} {b['key']}") for b in blocked[:3]]
+        out += section("blocked", f'{S.card("blocked", LANG)} {len(blocked)}')
+        # The title, not the key: `<phase>|<name>` is how the scripts join records to
+        # items, and it has no business in something a person reads.
+        for b in blocked[:3]:
+            out += fold(b["title"], bullet, under, limit=1)
         if len(blocked) > 3:
-            out.append(f'   {DOT} {S.card("and_more", LANG, n=len(blocked) - 3)}')
+            out.append(f'{bullet}{S.card("and_more", LANG, n=len(blocked) - 3)}')
 
     return out
 

@@ -119,6 +119,10 @@ Then report:
 - The three largest items and why they are large
 - What the estimate excludes
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never write a number with no reasoning. If it is a rough split, say "rough"

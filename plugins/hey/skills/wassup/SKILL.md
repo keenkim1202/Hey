@@ -83,6 +83,10 @@ The board already printed a line with personality. Add at most one sentence of y
 grounded in the numbers that actually printed. **If the user is behind, say so** and name
 the one item that would recover it.
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never edit the ledger. Brief only

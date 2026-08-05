@@ -97,6 +97,10 @@ Clean up first
 Close with one sentence, grounded in the numbers that actually printed. If the day was
 behind, say it was behind.
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never create a ledger inside a worktree. Never commit it

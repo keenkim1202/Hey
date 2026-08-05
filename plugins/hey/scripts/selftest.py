@@ -70,12 +70,30 @@ LEDGER = """# fixture ledger
 BOXES = "4/9 boxes"
 
 WIDTH_PROBE = """
-import sys; sys.path.insert(0, {here!r})
-import board as b
-got = {{s: b._w(s) for s in ('───', '…', '█', '한글', 'abc')}}
+import sys, unicodedata; sys.path.insert(0, {here!r})
+import board as b, strings as s
+got = {{x: b._w(x) for x in ('───', '…', '█', '한글', 'abc')}}
 want = {{'───': 3, '…': 1, '█': 1, '한글': 4, 'abc': 3}}
 assert got == want, got
 assert b._w(b.head('proj', '2026-08-05 (Wed)')) == b.WIDTH
+
+# Section markers must be one codepoint wide-by-declaration. A variation selector makes a
+# glyph measure narrow and draw wide, which silently shifts every aligned row under it.
+for name, mark in s.MARK.items():
+    assert len(mark) == 1, (name, mark, 'more than one codepoint')
+    eaw = unicodedata.east_asian_width(mark)
+    assert eaw == 'W', (name, mark, eaw)
+    assert b._w(mark) == 2, (name, mark, b._w(mark))
+
+# Folding must never hand back a line wider than the card.
+long_ko = '다국어 파이프라인 완성해 머지했고 ' * 6
+for limit in (1, 2, 3):
+    for line in b.fold(long_ko, '   · ', '     ', limit=limit):
+        assert b._w(line) <= b.WIDTH, (limit, b._w(line), line)
+    assert len(b.fold(long_ko, '   · ', '     ', limit=limit)) <= limit
+# A token with no space to break on still has to fit.
+for line in b.fold('x' * 200, '   · ', '     '):
+    assert b._w(line) <= b.WIDTH, (b._w(line), line)
 """
 
 BLOCKER_PROBE = """

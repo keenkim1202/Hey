@@ -22,6 +22,24 @@ WEEKDAYS = {
     "ko": ["월", "화", "수", "목", "금", "토", "일"],
 }
 
+# Section markers. Not per-language, and not decoration: they exist so a reader can find
+# the section they want without reading the labels. One per section header, never inside a
+# column that has to line up, and the same glyph for the same meaning every single day.
+# A set this small stays a scanning aid; a bigger one turns the card into noise.
+#
+# Only single-codepoint emoji whose East Asian Width is `W`. Anything carrying a variation
+# selector (U+FE0F, as in the warning sign) measures narrow but draws wide in most
+# terminals, which silently breaks every aligned row below it. The self-test enforces this.
+MARK = {
+    "progress": "📋",
+    "log": "🕘",
+    "resume": "🔧",
+    "notes": "📝",
+    "results": "📈",
+    "next": "🎯",
+    "blocked": "🚧",
+}
+
 METRIC_LABELS = {
     "en": {"ai": "closed", "code": "code", "tokens": "tokens"},
     "ko": {"ai": "작업량", "code": "코드량", "tokens": "토큰량"},
@@ -37,14 +55,15 @@ CARD = {
         "yesterday": "Yesterday", "today_did": "Done today",
         "resume": "Pick up here", "loose": "Not wrapped up",
         "notes": "Notes",
+        "progress_head": "Progress",
         "checklist": "Checklist", "boxes_closed": "{done} / {total} boxes closed",
         "effort": "Effort", "effort_val": "{done} / {total} AI-days closed",
-        "effort_note": "{left} left · {wip} in progress · 1 AI-day = 8h",
+        "effort_note": "{left} left · {wip} in progress",
         "week": "This week", "week_val": "{got} / {goal} AI-days",
         "week_note": "{gap} {pace} pace (Mon-Fri)",
         "results": "Output", "best_on": "best {val} on {date}",
         "unit_aid": "AI-days",
-        "today_next": "Today   8h = AI 1.0", "tomorrow_next": "Tomorrow",
+        "today_next": "Today", "tomorrow_next": "Tomorrow",
         "blocked": "Blocked", "no_record": "no record — no log, no commits",
         "and_more": "and {n} more", "peak_at": "peak",
         "ahead": "ahead of", "behind": "behind", "on_pace": "on",
@@ -58,14 +77,15 @@ CARD = {
         "yesterday": "어제", "today_did": "오늘 한 일",
         "resume": "이어갈 자리", "loose": "정리 안 된 작업",
         "notes": "메모",
+        "progress_head": "진행",
         "checklist": "체크리스트", "boxes_closed": "{done} / {total} 칸 닫음",
         "effort": "산정", "effort_val": "{done} / {total} AI-일 완료",
-        "effort_note": "남은 {left} · 착수 {wip} · AI-일 1 = 8시간",
+        "effort_note": "남은 {left} · 착수 {wip}",
         "week": "이번 주", "week_val": "{got} / {goal} AI-일",
         "week_note": "페이스 {gap} {pace} (월-금)",
         "results": "산출", "best_on": "최고 {val} — {date}",
         "unit_aid": "AI-일",
-        "today_next": "오늘 후보   8시간 = AI 1.0", "tomorrow_next": "내일 후보",
+        "today_next": "오늘 후보", "tomorrow_next": "내일 후보",
         "blocked": "막힌 것", "no_record": "기록 없음. 작업 로그도 커밋도 없다",
         "and_more": "외 {n}건", "peak_at": "최고",
         "ahead": "앞섬", "behind": "뒤짐", "on_pace": "일치",

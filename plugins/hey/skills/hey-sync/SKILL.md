@@ -114,6 +114,10 @@ python3 "$BOARD" collect
 Run it after the checks land, or today's closed work will be undercounted. If `/seeya`
 comes next, one `collect` between the two is enough.
 
+## Wording
+
+**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+
 ## Never
 
 - Never create a ledger inside a worktree

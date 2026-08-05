@@ -151,6 +151,32 @@ English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
 | `/hey-standup` | three lines for a standup, no metrics |
 
+## How to write what you add
+
+The card is the data. Everything you write around it is read by a person who is about to
+start or finish a day's work, so it reads like a colleague talking, not like a report.
+
+**Shape.** At most three blocks. Each is a one-line heading and two to four bullets. One
+closing sentence, and only if it says something the numbers do not.
+
+**Words to drop.** These are the tells that something was generated rather than said:
+
+- `살펴보겠습니다` `요약하면` `핵심은` `참고로` — presentation filler
+- `~할 수 있을 것 같습니다` — stacked hedging. If it is unknown, say it is unknown, once
+- `확인 필요.` `진행 예정.` — a noun standing in for a sentence. End on a verb
+- `좋습니다` `훌륭합니다` `잘 진행되고 있습니다` — praise. The user can see the numbers
+- `또한` `더불어` `나아가` in consecutive sentences
+
+**Words to use.** Short declaratives, one fact each. Verbs over nouns. The user's own
+vocabulary from the ledger, unparaphrased — renaming their item makes it unsearchable. Bad
+news first, with no cushion in front of it.
+
+**Numbers** come from the script output, copied. Never recomputed, never rounded by eye.
+
+**Emoji** belong to the card, which uses a fixed set of seven as section markers. Do not
+add your own, do not put one inside a line that has to line up with the line above it, and
+do not decorate your prose with them — the card already carries the scanning aids.
+
 ## Never
 
 - Never commit the ledger. It is local; `.git/info/exclude` is the default home for it
