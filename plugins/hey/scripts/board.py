@@ -26,7 +26,7 @@ import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, card_width, die, fmt_date, load_config, merge_stats,
     need_history, project_base, project_setting, projects_in_scope, read_stats,
-    record_progress, save_config, today_str, worktree_roots, _sh,
+    record_progress, save_config, today_str, unpushed, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -509,12 +509,17 @@ def _lines(cmd: list, cwd: Path) -> list:
 
 
 def _worktree_state(root: Path, base: str | None) -> list:
-    """Per worktree: (path, branch, uncommitted files, commits ahead)."""
+    """Per worktree: (path, branch, uncommitted files, unpushed commits, has upstream).
+
+    Unpushed rather than ahead-of-base. A pushed branch waiting on review is ahead of the
+    base too, and listing it as state about to be lost is the kind of false alarm that
+    teaches the reader to skip the section that holds the real ones.
+    """
     rows = []
     for w in worktree_roots(root):
         st = _lines(["git", "status", "--short"], w)
-        ahead, _ = ahead_of_base(w, base)
-        rows.append((w, _sh(["git", "branch", "--show-current"], w), len(st), len(ahead)))
+        gone, has_up = unpushed(w, base)
+        rows.append((w, _sh(["git", "branch", "--show-current"], w), len(st), gone, has_up))
     return rows
 
 
@@ -582,10 +587,13 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     wts = [w for w in _worktree_state(root, base) if w[2] or w[3]]
     if wts:
         out += section("resume", S.card("loose" if mode == "wrap" else "resume", LANG))
-        for w, br, dirty, ahead in wts[:4]:
+        for w, br, dirty, gone, has_up in wts[:4]:
             bits = []
-            if ahead:
-                bits.append(S.card("commits_no_pr", LANG, n=ahead))
+            if gone:
+                # Say which of the two it is. "No PR" was the old wording and it asserted
+                # something never checked -- nothing here queries a forge for pull requests.
+                bits.append(S.card("commits_unpushed" if has_up else "commits_unpushed_all",
+                                   LANG, n=gone))
             if dirty:
                 bits.append(S.card("uncommitted", LANG, n=dirty))
             out.append(clip(f"{bullet}{w.name}  {br or 'detached'}  {' · '.join(bits)}"))

@@ -221,6 +221,25 @@ def ahead_of_base(worktree: Path, base: str | None) -> tuple[list[str], bool]:
     return [ln for ln in out.split("\n") if ln.strip()], True
 
 
+def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
+    """(commits not on any remote, whether the branch has an upstream at all).
+
+    `ahead_of_base` answers a different question -- what is not in the base branch yet --
+    and a pushed feature branch answers that too. Reporting those as work at risk is a
+    false alarm, and a card full of false alarms is one nobody reads. Work is only
+    losable while no remote has it.
+
+    With no upstream, nothing on the branch has left the machine, so everything it holds
+    over the base counts. With one, only what sits past it does.
+    """
+    up = _sh(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+             worktree)
+    if not up or up == "@{upstream}":
+        return len(ahead_of_base(worktree, base)[0]), False
+    out = _sh(["git", "log", "--oneline", f"{up}..HEAD"], worktree)
+    return len([ln for ln in out.split("\n") if ln.strip()]), True
+
+
 def resolve_project(cfg: dict, cwd: Path | None = None) -> dict | None:
     """Find which registered project the current directory belongs to."""
     cwd = cwd or Path.cwd()
@@ -1182,12 +1201,19 @@ def cmd_dirty(args, cfg):
             st = _sh(["git", "status", "--short"], w)
             br = _sh(["git", "branch", "--show-current"], w)
             ahead, ok = ahead_of_base(w, base)
+            gone, has_up = unpushed(w, base)
             comparable = comparable and ok
-            if st or ahead:
+            if st or gone or ahead:
                 found = True
                 print(f"[{p['name']}] {w}  ({br or 'detached'})")
-                if ahead:
-                    print(f"    {len(ahead)} commit(s) ahead of origin/{base}")
+                # Two different facts, and only the first is work at risk. A pushed branch
+                # awaiting review is ahead of the base as well, and calling that unpushed
+                # is what made this view cry wolf.
+                if gone:
+                    where = "unpushed" if has_up else "on a branch never pushed"
+                    print(f"    {gone} commit(s) {where}")
+                if ahead and not gone:
+                    print(f"    {len(ahead)} commit(s) pushed but not in origin/{base}")
                 if st:
                     print(f"    {len(st.split(chr(10)))} uncommitted file(s)")
                     for f in st.split("\n")[:5]:

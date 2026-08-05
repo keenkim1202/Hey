@@ -404,7 +404,7 @@ def main() -> int:
         ([hey, "notes", "--since", "3"], "read notes"),
         ([hey, "log"], "read log"),
         ([hey, "next"], "next up"),
-        ([hey, "dirty"], "dirty: base branch detected", "1 commit(s) ahead of origin/main"),
+        ([hey, "dirty"], "dirty: an upstream makes the count unpushed", "1 commit(s) unpushed"),
         ([hey, "dirty"], "dirty: linked worktree seen", side.name),
         ([hey, "dirty", "--base", "nope"], "dirty: unresolved base is not silent",
          "were NOT checked"),
@@ -504,8 +504,24 @@ def main() -> int:
     git("push", "-q", "origin", "main")
     git("checkout", "-q", "squashed")
     code, out = run([hey, "dirty"], env, proj)
+    # Match the per-worktree phrasing, not the word: the all-clear line is itself
+    # "nothing uncommitted or unpushed", which a bare substring test would trip over.
     check("dirty: a squash-merged branch is not unpushed work",
-          "ahead of origin/main" not in out, out)
+          "commit(s) unpushed" not in out and "never pushed" not in out, out)
+
+    # The bug this replaced: a branch that IS pushed is still ahead of the base, and the
+    # card used to file it under work about to be lost -- with a `no PR` label nothing had
+    # checked. Pushed-but-unmerged has to read as its own state, and not as unpushed.
+    git("checkout", "-q", "-b", "in-review")
+    (proj / "reviewed.txt").write_text("pushed, awaiting review\n")
+    git("add", "-A")
+    git("commit", "-qm", "work awaiting review")
+    git("push", "-q", "-u", "origin", "in-review")
+    code, out = run([hey, "dirty"], env, proj)
+    check("dirty: a pushed branch is not called unpushed",
+          "pushed but not in origin/main" in out and "commit(s) unpushed" not in out, out)
+    # Put the fixture back where the checks below expect to find it.
+    git("checkout", "-q", "squashed")
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: names the squash leftover as deletable",
           "already merged into origin/main" in out, out)
