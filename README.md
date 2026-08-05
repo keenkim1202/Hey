@@ -13,8 +13,10 @@
 
 # hey
 
-**Run your work off one markdown ledger.** Checklist, estimates, a morning briefing
-and an end-of-day record — printed from a file you can read and edit by hand.
+**Run your work off one markdown ledger.**
+
+Checklist, estimates, a morning briefing and an end-of-day record —
+printed from a file you can read and edit by hand.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/keenkim1202/Hey/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/keenkim1202/Hey/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)

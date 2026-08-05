@@ -13,7 +13,9 @@
 
 # hey
 
-**마크다운 파일 한 장으로 일을 굴립니다.** 체크리스트, 산정, 아침 브리핑, 마감 기록 —
+**마크다운 파일 한 장으로 일을 굴립니다.**
+
+체크리스트, 산정, 아침 브리핑, 마감 기록 —
 전부 직접 열어서 읽고 고칠 수 있는 파일 하나에서 나옵니다.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/keenkim1202/Hey/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/keenkim1202/Hey/actions/workflows/ci.yml)
