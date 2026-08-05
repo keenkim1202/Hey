@@ -561,6 +561,19 @@ def cmd_doctor(args, cfg):
             elif _sh(["git", "rev-parse", "--verify", "--quiet",
                       f"refs/remotes/origin/{base}"], root):
                 ok(f"base origin/{base}")
+                # The remote's default branch is not always the branch work merges into:
+                # a repository can keep `main` for releases and integrate on `develop`.
+                # Detected by the main worktree sitting well ahead of its own base, which
+                # otherwise makes every report count commits pushed weeks ago.
+                cur = _sh(["git", "branch", "--show-current"], root)
+                if cur and cur != base:
+                    n = _sh(["git", "rev-list", "--count",
+                             f"origin/{base}..origin/{cur}"], root)
+                    if n.isdigit() and int(n) >= 10:
+                        say("warn", f"this worktree is on `{cur}`, {n} commit(s) ahead of "
+                                    f"origin/{base}. If `{cur}` is what work merges into, "
+                                    f"re-add with `--base {cur}` - otherwise every report "
+                                    f"counts commits that were pushed long ago")
             else:
                 say("FAIL", f"origin/{base} does not exist - unpushed commits are never "
                             f"counted. Re-add with --base <branch>")

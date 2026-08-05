@@ -330,6 +330,19 @@ def main() -> int:
           code == 0 and "unregistered: second" in out, out)
     check("remove: ledger survived", (second / "TASKS.local.md").exists(), "")
 
+    # A remote's default branch is not always the branch work merges into. Put `develop`
+    # well ahead of `main` and work on it: with base still `main`, every report would count
+    # commits that were pushed long ago, so `doctor` has to say so. Last, because it
+    # rewrites the fixture's branches.
+    git("checkout", "-q", "-b", "develop")
+    for n in range(11):
+        git("commit", "-q", "--allow-empty", "-m", f"develop {n}")
+    git("push", "-q", "origin", "develop")
+    run([hey, "add", str(proj), "--name", "fixture", "--base", "main"], env, proj)
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: flags a base the working branch has left behind",
+          "If `develop` is what work merges into" in out, out)
+
     for label, detail in failed:
         print(f"\n--- {label} ---\n{detail}")
     if args.keep:
