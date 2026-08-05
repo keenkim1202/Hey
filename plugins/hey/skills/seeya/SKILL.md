@@ -42,6 +42,16 @@ section. Everything you write goes underneath it.
 ```
 
 - One line per bullet, five at most. Group beyond that
+- **Keep a bullet under about 130 columns** — roughly 65 Korean characters, or 130 English
+  ones. That is two folded lines on the narrowest card, and past it the card clips the
+  bullet with a `…`. What gets thrown away is the end of the sentence, which is where the
+  outcome usually is.
+  - Budget for the narrow card even when yours is wide. A wide `HEY_WIDTH` holds far more,
+    but the ledger is read again months later, on other machines, by `/wassup` and
+    `/hey-recap` as much as by you. The entry outlives the terminal it was written on
+  - **Split a long bullet into two rather than trimming words out of it.** Two facts stated
+    plainly beat one sentence compressed until it has to be read twice. Compression that
+    drops the subject, the number or the outcome has cost more than the clipping would
 - **Number anything that shipped as a PR**
 - **For unfinished work, say how far it got and what is left** — worktree, branch, whether
   it is committed
