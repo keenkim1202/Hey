@@ -129,6 +129,9 @@ assert w(str(hey.CARD_MAX)) == (hey.CARD_MAX, 'HEY_WIDTH')
 # for -- `doctor` prints this, and a silent clamp there reads as the setting being honoured.
 assert w('10') == (hey.CARD_MIN, 'HEY_WIDTH=10, clamped'), w('10')
 assert w('999') == (hey.CARD_MAX, 'HEY_WIDTH=999, clamped'), w('999')
+# `$COLUMNS` reads as 0 in a shell with no tty, so 0 is what gets passed through by anyone
+# who trusts it. It is a digit, so it clamps rather than falling back -- and has to say so.
+assert w('0') == (hey.CARD_MIN, 'HEY_WIDTH=0, clamped'), w('0')
 
 # The card has to lay out at whatever the resolver returns, at both ends of the range.
 # `WIDTH` binds at import, so the module is reloaded per width rather than reassigned.

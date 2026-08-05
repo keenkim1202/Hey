@@ -142,15 +142,24 @@ The card is 78 columns by default, and `HEY_WIDTH` widens it to at most 120. On 
 terminal that is worth setting: lines fold less, and fewer descriptions get clipped to a
 `…`. `doctor` prints the width in effect and where it came from.
 
-**You cannot measure the terminal for them.** Your shell has no tty, so `tput cols` and
-`shutil.get_terminal_size()` both return their 80-column fallback whether or not the
-terminal is really 80 wide, and `stty size` fails outright with `stdin isn't a terminal`.
-A user running `tput cols` themselves in the session hits the same fallback, so their
-answer is no better than yours. Do not set a width off any of those numbers.
+**You cannot measure the terminal for them.** Your shell has no tty, so every probe fails,
+each in its own misleading way:
 
-The failure is worth naming, because the two halves mislead in opposite directions: a
-command that errors looks broken, which makes the one that answers `80` look like it
-measured something. Neither did.
+| Probe | What you get |
+|---|---|
+| `tput cols` | `80` — its fallback, whatever the terminal really is |
+| `shutil.get_terminal_size()` | `columns=80` — the same fallback |
+| `stty size` | fails with `stdin isn't a terminal`, exit 1 |
+| `echo $COLUMNS` | `0` — a number, and a useless one |
+
+`sys.stdout.isatty()` is `False`, and that is the one honest answer in the set: it says
+there is nothing here to measure. A user running `tput cols` themselves in the session hits
+the same fallback, so their answer is no better than yours.
+
+Do not set a width off any of those numbers, and note that they mislead in *different*
+directions. A command that errors looks broken, which makes the one answering `80` look
+like it measured something. `0` looks like a value you could pass straight through, and
+`HEY_WIDTH=0` is accepted — `isdigit()` takes it, then the floor clamps it to 72.
 
 Measure it by asking. Print a ruler in a fenced block and have the user read it back:
 
