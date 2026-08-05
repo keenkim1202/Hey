@@ -112,17 +112,35 @@ def project_setting(cfg: dict, p: dict, key: str, default=None):
     return p[key] if key in p else cfg.get(key, default)
 
 
+def already_merged(worktree: Path, base: str | None) -> bool:
+    """Is this branch's work already in `origin/<base>`, differing only in history?
+
+    A squash merge rewrites the branch's commits into one new commit, so the branch keeps
+    commits the base has never seen while its *content* is fully merged. Counting those as
+    unpushed work makes the report nag about a branch whose only remaining job is to be
+    deleted. Comparing trees instead of commits is what tells the two apart.
+    """
+    if not base:
+        return False
+    diff = subprocess.run(["git", "diff", "--quiet", f"origin/{base}", "HEAD"],
+                          cwd=worktree, capture_output=True)
+    return diff.returncode == 0
+
+
 def ahead_of_base(worktree: Path, base: str | None) -> tuple[list[str], bool]:
     """Commits on HEAD that never reached `origin/<base>`.
 
     The second value is False when the comparison could not be made at all. That case
-    must never be reported as zero — see `default_base`.
+    must never be reported as zero — see `default_base`. Commits whose content is already
+    merged are excluded; see `already_merged`.
     """
     if not base:
         return [], False
     if not _sh(["git", "rev-parse", "--verify", "--quiet",
                 f"refs/remotes/origin/{base}"], worktree):
         return [], False
+    if already_merged(worktree, base):
+        return [], True
     out = _sh(["git", "log", "--oneline", f"origin/{base}..HEAD"], worktree)
     return [ln for ln in out.split("\n") if ln.strip()], True
 
@@ -577,8 +595,20 @@ def cmd_doctor(args, cfg):
             else:
                 say("FAIL", f"origin/{base} does not exist - unpushed commits are never "
                             f"counted. Re-add with --base <branch>")
-            n = len(worktree_roots(root))
-            ok(f"{n} worktree(s) counted")
+            trees = worktree_roots(root)
+            ok(f"{len(trees)} worktree(s) counted")
+            # Squash-merged branches keep commits the base never saw. `dirty` and the
+            # session hook stay quiet about them so they do not nag every session, which
+            # leaves this the only place the leftover surfaces.
+            for w in trees:
+                if not _sh(["git", "log", "--oneline",
+                            f"origin/{base}..HEAD"], w):
+                    continue
+                if already_merged(w, base):
+                    branch = _sh(["git", "branch", "--show-current"], w) or "detached"
+                    say("warn", f"{w.name} on `{branch}` is already merged into "
+                                f"origin/{base} - the commits differ but the content does "
+                                f"not, which is what a squash merge leaves. Delete it")
 
         led = Path(p["ledger"])
         if not led.exists():

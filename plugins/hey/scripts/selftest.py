@@ -104,8 +104,15 @@ for key in ('code', 'tokens', 'items'):
 
 
 def run(cmd: list, env: dict, cwd: Path) -> tuple:
+    """Run one command to completion with no input.
+
+    `stdin=DEVNULL` is not optional: the session-start hook reads a JSON payload from
+    stdin, so an inherited stdin that nobody closes leaves it blocking forever. Passing
+    the terminal through happens to work when stdin is already at EOF, which is how that
+    hangs only outside an interactive shell.
+    """
     p = subprocess.run([sys.executable, *cmd], env=env, cwd=str(cwd),
-                       capture_output=True, text=True)
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
@@ -329,6 +336,27 @@ def main() -> int:
     check("remove: unregisters and keeps the ledger",
           code == 0 and "unregistered: second" in out, out)
     check("remove: ledger survived", (second / "TASKS.local.md").exists(), "")
+
+    # A squash merge leaves the branch holding commits the base never saw while the content
+    # is fully merged. Reproduced by committing on a branch, then squashing that same
+    # content onto the base: `dirty` must stop calling it unpushed, and `doctor` must call
+    # it deletable.
+    git("checkout", "-q", "-b", "squashed")
+    (proj / "squashed.txt").write_text("merged by squash\n")
+    git("add", "-A")
+    git("commit", "-qm", "work on the branch")
+    git("checkout", "-q", "main")
+    git("merge", "-q", "--squash", "squashed")
+    git("commit", "-qm", "squashed onto main (#99)")
+    git("push", "-q", "origin", "main")
+    git("checkout", "-q", "squashed")
+    code, out = run([hey, "dirty"], env, proj)
+    check("dirty: a squash-merged branch is not unpushed work",
+          "ahead of origin/main" not in out, out)
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: names the squash leftover as deletable",
+          "already merged into origin/main" in out, out)
+    git("checkout", "-q", "main")
 
     # A remote's default branch is not always the branch work merges into. Put `develop`
     # well ahead of `main` and work on it: with base still `main`, every report would count
