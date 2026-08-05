@@ -683,7 +683,13 @@ def merge_stats(on: str, project: str, fields: dict) -> None:
     if hit is None:
         hit = {"date": on, "project": project}
         rows.append(hit)
-    hit.update(fields)
+    # A None means the field no longer applies -- a day that gained `earned_ai` is not a
+    # baseline any more. Merging it as a value would leave the key sitting there.
+    for k, v in fields.items():
+        if v is None:
+            hit.pop(k, None)
+        else:
+            hit[k] = v
     rows.sort(key=lambda r: (r["date"], r["project"]))
     write_stats(rows)
 
@@ -701,6 +707,10 @@ def record_progress(led: Ledger, on: str) -> dict:
             if r["project"] == led.project["name"] and r["date"] < on and r.get("items")]
     if prev:
         snap["earned_ai"] = earned_ai(prev[-1], snap)
+        # A row that gains a closed-work number is no longer the baseline, and `merge_stats`
+        # keeps whatever the row already had -- so the stale flag has to be cleared here or
+        # the day claims to be both.
+        snap["baseline"] = None
     else:
         snap["baseline"] = True
     return snap
@@ -946,8 +956,10 @@ def cmd_doctor(args, cfg):
             if gaps:
                 shown = ", ".join(gaps[:3]) + (f" and {len(gaps) - 3} more" if len(gaps) > 3 else "")
                 say("warn", f"{len(gaps)} logged day(s) never recorded: {shown}. "
-                            f"`board.py collect --date <day>` recovers code and tokens, "
-                            f"but closed boxes are gone -- the ledger only holds today")
+                            f"`board.py collect --date <day>` recovers that day's code and "
+                            f"tokens. Closed work is not recoverable and is left alone -- "
+                            f"the ledger only holds today, so writing it would move the "
+                            f"baseline and zero the newer day")
             # A marker pointing at a branch git has never heard of is either a typo or a
             # branch that was deleted after merging. Both leave the join silently dead, and
             # a dead join reads exactly like an item that has no branch.
@@ -1082,7 +1094,8 @@ def cmd_rank(args, cfg):
 def cmd_carryover(args, cfg):
     """Items stuck in progress across snapshots, and blockers that have aged."""
     for p, led in _each(args, cfg):
-        rows = [r for r in read_stats() if r["project"] == p["name"]]
+        rows = [r for r in read_stats()
+                if r["project"] == p["name"] and r.get("items")]
         if len(rows) < 2:
             need_history(p["name"], "carry-over", len(rows), 2)
             continue
@@ -1170,7 +1183,8 @@ def cmd_variance(args, cfg):
 def cmd_burndown(args, cfg):
     bars = " ▁▂▃▄▅▆▇█"
     for p, _ in _each(args, cfg):
-        rows = [r for r in read_stats() if r["project"] == p["name"]]
+        rows = [r for r in read_stats()
+                if r["project"] == p["name"] and "wip_ai" in r]
         if len(rows) < 2:
             need_history(p["name"], "the burndown trend", len(rows), 2)
             continue

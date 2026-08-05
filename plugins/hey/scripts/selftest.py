@@ -438,6 +438,7 @@ def main() -> int:
 
     hey, board = str(HERE / "hey.py"), str(HERE / "board.py")
     yesterday = (date.today() - timedelta(days=1)).isoformat()
+    two_days_ago = (date.today() - timedelta(days=2)).isoformat()
     probes = {
         "stats": STATS_PROBE.format(yesterday=yesterday, today=today),
         "display width": WIDTH_PROBE.format(here=str(HERE)),
@@ -471,6 +472,10 @@ def main() -> int:
         ([board, "collect", "--date", today], "collect (today)"),
         ([hey, "snapshot"], "snapshot"),
         (["-c", probes.pop("stats")], "first record is a baseline"),
+        # Re-collecting a day already behind a recorded one must not restate box state:
+        # the ledger holds only today, so it would move the baseline and zero the newer day.
+        ([board, "collect", "--date", two_days_ago], "collect: a past day keeps its hands off "
+         "box state", "not collected - a later day is already recorded"),
         ([hey, "rank"], "rank"),
         ([hey, "carryover", "--days", "1"], "carry-over"),
         ([hey, "variance"], "variance: settled-earlier item excluded",

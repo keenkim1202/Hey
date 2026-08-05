@@ -173,8 +173,18 @@ def cmd_collect(args, cfg):
     for p in projs:
         fields = {}
         root = Path(p["root"])
-        if Path(p["ledger"]).exists():
+        # Box state is only ever the ledger's *current* state -- there is no history in the
+        # file. Stamping it under an earlier date than a record that already exists moves
+        # which day counts as the baseline, and the newer day then diffs against an
+        # identical snapshot and reads 0 forever. Code and tokens do backfill, because git
+        # and the transcripts keep their own history, so those are still collected.
+        later = [r for r in read_stats()
+                 if r["project"] == p["name"] and r.get("items") and r["date"] > on]
+        if Path(p["ledger"]).exists() and not later:
             fields.update(record_progress(Ledger(p), on))
+        elif later:
+            print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so box "
+                  f"state is left alone -- the ledger only holds today. Code and tokens only")
         # Resolved per project: a repository may carry its own committer identity.
         author = (args.author or cfg.get("author")
                   or _sh(["git", "config", "user.email"], root))
@@ -185,8 +195,12 @@ def cmd_collect(args, cfg):
         fields["tokens"] = token_usage(p, on)
         merge_stats(on, p["name"], fields)
         c, t = fields["code"], fields["tokens"]
-        closed = ("baseline - counted from the next record on" if fields.get("baseline")
-                  else f"{fields.get('earned_ai', 0)} AI-days")
+        if "cb_done" not in fields:
+            closed = "not collected - a later day is already recorded"
+        elif fields.get("baseline"):
+            closed = "baseline - counted from the next record on"
+        else:
+            closed = f"{fields.get('earned_ai', 0)} AI-days"
         print(f"[{p['name']}] {fmt_date(on)} recorded"
               f"\n  closed  {closed}"
               f"\n  code    +{c['added']} -{c['deleted']} ({c['commits']} commits)"
