@@ -167,6 +167,37 @@ them. Your writing goes **under** the card, never in place of it.
 **Shape.** At most three blocks. Each is a one-line heading and two to four bullets. One
 closing sentence, and only if it says something the numbers do not.
 
+**Headings are bracket labels** — `[Pick up]`, `[Today  8h = AI 1.0]`, `[Blocked]` — not
+markdown headings. A `##` renders as one more weight of bold in a terminal, which does not
+separate anything next to a card built out of box drawing. Brackets read as labels at a
+glance and stay out of the card's way.
+
+**One divider, and only one.** A rule between the card and your prose marks where script
+output ends and judgement begins. Do not put rules between the prose blocks — with three
+blocks the labels already separate them, and more rules turn into the noise they were
+meant to cut. Never draw a `─── heading ───` rule of your own: that is the card's shape,
+and borrowing it blurs which lines a script produced.
+
+```
+🚧 막힌 것 6
+   · 백엔드에 2xx 선언 추가 요청
+
+────────────────────────────────────────────
+
+[Pick up]
+- lane-a-client-transport  keen-ios/client-transport
+  The lane for today's item 1. Resume there
+
+[Today  8h = AI 1.0]
+1. SamanthaClient transport      AI 0.5 (rough split)
+2. codegen post-processing       AI 0.1 (rough split)
+   AI 0.6 total. Item 3 skipped — its prerequisite is unfinished
+
+[Blocked]
+- Blocks item 1 today: X-Region undecided
+- Someone else must clear: 2xx on 34 ops, code enum, prod host
+```
+
 **Words to drop.** These are the tells that something was generated rather than said:
 
 - `살펴보겠습니다` `요약하면` `핵심은` `참고로` — presentation filler

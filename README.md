@@ -3,11 +3,13 @@
 ```
         ─── hey ─────────────────────────  2026-08-05 (Wed)
 
-         🕘 Yesterday   CSV import pipeline merged (#20)
+         🕘 Yesterday   Theme bundler swapped to esbuild (#20)
          🔧 Pick up     wt-checkout  1 commit(s), no PR
          📋 Checklist   3 / 13 boxes      ████░░░░░░░░░░░░░░
          🎯 Today       AI 0.4 of 1.0     two subitems you can close
 ```
+
+<img src="docs/icon.png" width="76" alt="">
 
 # hey
 
@@ -29,9 +31,13 @@ and an end-of-day record — printed from a file you can read and edit by hand.
 
 ## ⚡ Before / after
 
-**Before.** It is Wednesday morning. What did you do on Tuesday? You scroll `git log`,
-open three worktrees to find the one with uncommitted changes, guess how much of the
-sprint is left, and start on whatever is loudest.
+**Before.** It is Wednesday morning. What did I do yesterday..? `git log` gives me commit
+messages and none of it is coming back. Three worktrees are open and I cannot tell how far
+any of them got, and I am fairly sure one is sitting on a commit with no PR — but which
+branch was it.
+
+And how much of the sprint is left, anyway. So I start on whatever is loudest, and
+tomorrow I go looking for yesterday's half-finished work all over again.
 
 **After.** One command, one card.
 
@@ -39,11 +45,11 @@ sprint is left, and start on whatever is loudest.
 ─── orchard ───────────────────────────────────────────────── 2026-08-05 (Wed)
 
 🕘 Yesterday  08-04 (Tue)
-   · CSV import pipeline merged (#20). 603 rows mapped to the catalog
-   · Currency entity merged (#19)
+   · Theme bundler swapped to esbuild (#20). Cold build down from 9s to 5s
+   · Syntax highlighter wired into the render step (#19)
 
 🔧 Pick up here
-   · wt-checkout  feat/csv-import  1 commit(s), no PR
+   · wt-checkout  feat/toc-anchors  1 commit(s), no PR
 
 📋 Progress
    Checklist   3 / 13 boxes closed        (23.1%)  ████░░░░░░░░░░░░░░
@@ -59,18 +65,18 @@ sprint is left, and start on whatever is loudest.
     3  08-03 (Mon)  ███████▎                  0.60
 
 🎯 Today
-   1. OrchardClient transport — `AuthMiddleware` and `RetryingMiddleware`
-      are what is left. #19 landed the token side, so the 401 refresh has a
-      place to attach
-   2. Domain/Data Account — country list and social login wiring. Two
-      Onboarding stubs come out here
-   3. Navigation module — the two `TODO(routing)` markers in Onboarding
-      hang on this
+   1. Heading anchors — two headings with the same title collide on one
+      slug. A suffix scheme has to land before the table of contents can link
+      anywhere reliably
+   2. Image pipeline — inject width and height at build time so pages stop
+      shifting while images load
+   3. Search index — emit a JSON index beside the build output. Waits on
+      anchors, since those are the link targets
 
 🚧 Blocked 3
-   · Backend to declare 2xx on 34 operations
-   · Prod host
-   · X-Region header: required or not
+   · Font license for the code theme
+   · Deploy domain not picked yet
+   · How search results should rank
 ```
 
 Seven emoji mark the sections, and they are the only ones the card uses. **This week**
@@ -93,9 +99,9 @@ estimates, a work log, a notes section. You read and edit it like any other file
 never committed.
 
 ```markdown
-- [ ] **Social login, 4 providers** — Apple / Google / GitHub / Microsoft — 6 MD / AI 3.4
-  - [x] Apple Sign In
-  - [ ] Google Sign In
+- [ ] **Image pipeline** — width/height, lazy loading, thumbnails — 6 MD / AI 3.4
+  - [x] Read intrinsic size at build time
+  - [ ] Thumbnail generation
 ```
 
 **The scripts** parse it and do every calculation — box counts, effort totals, daily
@@ -127,8 +133,10 @@ Or from inside Claude Code:
 ```
 
 `hey@hey` reads oddly but is right: it is `<plugin>@<marketplace>`, and both are named
-`hey`. The first command registers the catalog, the second installs from it — installing
-needs the catalog, so the order matters. Re-running either is safe.
+`hey`.
+
+The first command registers the catalog, the second installs from it — installing needs the
+catalog, so the order matters. Re-running either is safe.
 
 Then register a project and get a ledger:
 
@@ -152,10 +160,11 @@ Codex reads the same marketplace file, and Codex's own plugin validator passes:
 codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
 ```
 
-Codex loads the nine skills under `skills/`. It does not load `/hey` — that is a command
-rather than a skill — and it does not load the session-start hook, because neither is a
-component a Codex plugin manifest accepts. Skills resolve their scripts through
-`$CLAUDE_PLUGIN_ROOT`, falling back to `$PLUGIN_ROOT`, which is the name Codex uses.
+- **Loaded:** the nine skills under `skills/`
+- **Not loaded:** `/hey`, which is a command rather than a skill, and the session-start
+  hook — neither is a component a Codex plugin manifest accepts
+- **Script paths** resolve through `$CLAUDE_PLUGIN_ROOT`, falling back to `$PLUGIN_ROOT`,
+  which is the name Codex uses
 
 **Installation is verified; running the skills inside a live Codex session is not yet.**
 If a skill reports that it cannot find its script, that is the variable, and it is worth
@@ -268,15 +277,22 @@ flattering number.
 ## 🌏 Language
 
 English by default. Set `"lang": "ko"` in `~/.hey/config.json`, or export `HEY_LANG=ko`, to
-switch the interface. Only user-facing text changes; stored data stays language-neutral.
-Korean documentation lives in [docs/ko/README.ko.md](docs/ko/README.ko.md).
+switch the interface.
 
-A new language pack goes in `plugins/hey/scripts/strings.py`. Add a key for the language to
-each table keyed by language — `WEEKDAYS`, `METRIC_LABELS`, `UNITS`, `CARD`, `FLAIR`,
-`STREAK`, `STATE_LABELS`, `BLOCKER_WORDS`, `BLOCKER_SECTIONS` — and append the translated
-heading to each row of `SECTIONS`, which is keyed by section instead. If the language has no
-word boundary the way Hangul does not, extend `_bounded` alongside it. The tone rules for
-the personality lines are documented at the top of the file.
+Only user-facing text changes; stored data stays language-neutral. Korean documentation
+lives in [docs/ko/README.ko.md](docs/ko/README.ko.md).
+
+A new language pack goes in `plugins/hey/scripts/strings.py`:
+
+1. Add a key for the language to each table keyed by language — `WEEKDAYS`,
+   `METRIC_LABELS`, `UNITS`, `CARD`, `FLAIR`, `STREAK`, `STATE_LABELS`, `BLOCKER_WORDS`,
+   `BLOCKER_SECTIONS`
+2. Append the translated heading to each row of `SECTIONS`, which is keyed by section
+   instead
+3. If the language has no word boundary the way Hangul does not, extend `_bounded`
+   alongside it
+
+The tone rules for the personality lines are documented at the top of the file.
 
 ---
 
@@ -331,13 +347,19 @@ plugins/hey/
 └── templates/            LEDGER.md, LEDGER.ko.md
 ```
 
-The two manifests differ on purpose. Claude Code's carries no `version`, so every commit
-reaches users; Codex requires strict semver, so `.codex-plugin/plugin.json` pins one and
-has to be bumped for Codex users to see an update.
+The two manifests differ on purpose:
 
-The self-test starts with static checks — manifests parse, every skill declares a name and
-a description, no two components claim the same name — then builds a fixture project with
-a git remote, a linked worktree and a seeded ledger and runs every command against it.
+- **Claude Code's** carries no `version`, so every commit reaches users
+- **Codex** requires strict semver, so `.codex-plugin/plugin.json` pins one and has to be
+  bumped for Codex users to see an update
+
+The self-test runs in two stages:
+
+1. **Static checks** — manifests parse, every skill declares a name and a description, no
+   two components claim the same name
+2. **A fixture project** with a git remote, a linked worktree and a seeded ledger, with
+   every command run against it
+
 Nothing real is touched: `HEY_HOME` and the transcript directory both point into a temp
 directory.
 
@@ -372,6 +394,16 @@ link preview is edited as markup rather than in an image editor:
 
 That writes 2560x1280 — twice GitHub's recommended 1280x640, which downscales more cleanly
 than rendering at 1x. Upload it under Settings, General, Social preview.
+
+`docs/icon.png` — the mark above the README title — comes from `docs/icon.html` the same way,
+with a transparent background:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+  --default-background-color=00000000 --window-size=256,256 \
+  --screenshot=docs/icon.png "file://$PWD/docs/icon.html"
+```
 
 ---
 
