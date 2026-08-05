@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: selftest (${{ matrix.os }}, python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 on Linux pins the floor the README claims. The current release runs on both
+        # platforms, which is also what proves the scripts are not macOS-only.
+        include:
+          - os: ubuntu-latest
+            python: '3.9'
+          - os: ubuntu-latest
+            python: '3.13'
+          - os: macos-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: python and git versions
+        run: |
+          python3 --version
+          git --version
+
+      - name: selftest (en)
+        run: python3 plugins/hey/scripts/selftest.py
+
+      - name: selftest (ko)
+        run: python3 plugins/hey/scripts/selftest.py --lang ko

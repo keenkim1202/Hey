@@ -19,7 +19,7 @@ Config and history live in `~/.hey/`.
 
 | File | What |
 |---|---|
-| `config.json` | registered projects and their base branch, default scope, weekly goal, language |
+| `config.json` | registered projects with their base branch and goals, default scope, language |
 | `stats.jsonl` | daily snapshots. Ranking, burndown, carry-over and variance derive from these |
 
 ## Projects and scope
@@ -29,10 +29,21 @@ A user may run several projects at once, so commands take a **scope**.
 ```bash
 python3 "$HEY" projects                    # registered projects, and which one you are in
 python3 "$HEY" add <project root>          # register. Ledger defaults to <root>/TASKS.local.md
+python3 "$HEY" add <root> --init           # register and create the ledger from the template
 python3 "$HEY" add <root> --ledger <path>  # when the ledger lives elsewhere
 python3 "$HEY" add <root> --base <branch>  # when the remote's default branch is not it
+python3 "$HEY" remove <name>               # unregister. Ledger and history are kept
 python3 "$HEY" scope current|all           # default scope
+python3 "$HEY" doctor                      # what is misconfigured, all of it at once
 ```
+
+**Use `--init` rather than copying the template yourself.** It refuses to register a
+linked worktree and it puts the ledger at the registered path, which are the two rules
+this file spends the most words on. Still ask the user before creating one.
+
+When something reports nothing and you cannot see why, run `doctor` before guessing. It
+checks the base branch, the ledger's headings, estimates, and the history file, and every
+one of those failures otherwise shows up as an empty answer rather than an error.
 
 - `current` — the project you are standing in. **Resolves to the main repo root even
   from inside a linked git worktree**
@@ -87,11 +98,16 @@ Checklist item convention:
 ## Aggregation
 
 ```bash
-python3 "$HEY" progress --phases   # boxes, estimates, per-phase rows
-python3 "$BOARD" collect           # record today's closed/code/token totals
-python3 "$BOARD" brief             # morning card, one call
-python3 "$BOARD" wrap              # end-of-day card, one call
+python3 "$HEY" progress --phases            # boxes, estimates, per-phase rows
+python3 "$BOARD" collect                    # record today's closed/code/token totals
+python3 "$BOARD" brief                      # morning card, one call
+python3 "$BOARD" wrap                       # end-of-day card, one call
+python3 "$BOARD" goal --set 5.0 --daily 0.4 # this project's weekly and daily targets
 ```
+
+**Goals belong to a project, not to the machine.** `goal --set` writes to whatever is in
+scope, so with several projects registered set each one separately rather than sharing one
+number across all of them.
 
 Prefer `brief` and `wrap` over firing the individual commands. They exist because ten
 separate calls cost ten round trips and ten blocks of output in the context window.

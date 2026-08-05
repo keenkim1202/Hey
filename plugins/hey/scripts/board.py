@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, die, fmt_date, load_config, merge_stats, project_base,
-    projects_in_scope, read_stats, record_progress, save_config, today_str,
-    worktree_roots, _sh,
+    project_setting, projects_in_scope, read_stats, record_progress, save_config,
+    today_str, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -288,7 +288,8 @@ def cmd_streak(args, cfg):
         if not rows:
             print(f"[{p['name']}] no records yet")
             continue
-        thr = args.threshold if args.threshold is not None else cfg.get("daily_goal_ai", 0.3)
+        thr = (args.threshold if args.threshold is not None
+               else project_setting(cfg, p, "daily_goal_ai", 0.3))
         streak = best = 0
         for r in rows:
             if r["earned_ai"] >= thr:
@@ -313,18 +314,31 @@ def cmd_streak(args, cfg):
 
 
 def cmd_goal(args, cfg):
-    if args.set is not None:
-        cfg["weekly_goal_ai"] = args.set
+    """Read or set the goals. Goals are stored per project, not per machine."""
+    projs = projects_in_scope(cfg, args.scope, args.project)
+    if not projs:
+        die("no project in scope. Register one with `hey.py add <path>`")
+
+    if args.set is not None or args.daily is not None:
+        for p in projs:
+            if args.set is not None:
+                p["weekly_goal_ai"] = args.set
+            if args.daily is not None:
+                p["daily_goal_ai"] = args.daily
+            bits = [f"weekly {p['weekly_goal_ai']}"] if args.set is not None else []
+            if args.daily is not None:
+                bits.append(f"daily {p['daily_goal_ai']}")
+            print(f"[{p['name']}] goal set: {' · '.join(bits)} AI-days")
         save_config(cfg)
-        print(f"weekly goal: {args.set} AI-days")
         return
-    goal = cfg.get("weekly_goal_ai")
-    if goal is None:
-        print("no weekly goal set. Use `board.py goal --set 5.0`")
-        return
+
     on = date.fromisoformat(args.date or today_str())
     monday = on - timedelta(days=on.weekday())
-    for p in projects_in_scope(cfg, args.scope, args.project):
+    for p in projs:
+        goal = project_setting(cfg, p, "weekly_goal_ai")
+        if goal is None:
+            print(f"[{p['name']}] no weekly goal set. Use `board.py goal --set 5.0`")
+            continue
         rows = [r for r in read_stats()
                 if r["project"] == p["name"]
                 and monday.isoformat() <= r["date"] <= on.isoformat()]
@@ -500,7 +514,7 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             f' {pad(S.card("effort", LANG), W)}'
             f'{pad(S.card("effort_val", LANG, done=done_ai, total=g["total_ai"]), V)}'
             f'{S.card("effort_note", LANG, left=remain, wip=g["wip_ai"])}']
-    goal = cfg.get("weekly_goal_ai")
+    goal = project_setting(cfg, p, "weekly_goal_ai")
     if goal:
         d = date.fromisoformat(on)
         monday = d - timedelta(days=d.weekday())
@@ -590,8 +604,9 @@ def main() -> None:
     sp = add("streak", cmd_streak, help="consecutive days on goal")
     sp.add_argument("--threshold", type=float)
 
-    sp = add("goal", cmd_goal, help="weekly goal and pace")
-    sp.add_argument("--set", type=float)
+    sp = add("goal", cmd_goal, help="weekly goal and pace, per project")
+    sp.add_argument("--set", type=float, help="weekly goal in AI-days")
+    sp.add_argument("--daily", type=float, help="daily goal in AI-days, used by `streak`")
     sp.add_argument("--date")
 
     for name, mode, helptext in (("brief", "brief", "morning card (one call)"),

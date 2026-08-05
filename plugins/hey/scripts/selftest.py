@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-test — run every hey command against a throwaway fixture.
+"""Self-test — static checks, then every hey command against a throwaway fixture.
 
 Touches nothing real: HEY_HOME and the project both live in a temp directory, and the
 transcript directory is pointed at an empty path so token counting has nothing to read.
@@ -11,6 +11,7 @@ transcript directory is pointed at an empty path so token counting has nothing t
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -108,6 +109,77 @@ def run(cmd: list, env: dict, cwd: Path) -> tuple:
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
+def _frontmatter(path: Path) -> dict | None:
+    """The YAML frontmatter of a skill, parsed just enough to check the two keys."""
+    text = path.read_text()
+    if not text.startswith("---\n"):
+        return None
+    parts = text.split("---\n", 2)
+    if len(parts) < 3:
+        return None
+    meta = {}
+    for ln in parts[1].splitlines():
+        if ":" in ln and not ln.startswith((" ", "\t", "-")):
+            key, value = ln.split(":", 1)
+            meta[key.strip()] = value.strip()
+    return meta
+
+
+def static_checks() -> list:
+    """Manifest and frontmatter checks. No fixture, no subprocess, no network.
+
+    The component-name check is here because two components claiming one name is not a
+    syntax error anywhere: the manifest validates, the plugin loads, and one of them
+    silently shadows the other.
+    """
+    plugin = HERE.parent
+    out = []
+
+    docs = sorted((plugin / "skills").glob("*/SKILL.md"))
+    if (plugin / "SKILL.md").exists():
+        docs.append(plugin / "SKILL.md")
+
+    names: dict[str, list] = {}
+    for doc in docs:
+        rel = doc.relative_to(plugin)
+        meta = _frontmatter(doc)
+        if meta is None:
+            out.append(("skill frontmatter", f"{rel} has no frontmatter block"))
+            continue
+        for key in ("name", "description"):
+            if not meta.get(key):
+                out.append(("skill frontmatter", f"{rel} declares no `{key}`"))
+        if meta.get("name"):
+            names.setdefault(meta["name"], []).append(str(rel))
+    for cmd in sorted((plugin / "commands").glob("*.md")):
+        names.setdefault(cmd.stem, []).append(str(cmd.relative_to(plugin)))
+    for name, claimed_by in sorted(names.items()):
+        if len(claimed_by) > 1:
+            out.append(("component names",
+                        f"`{name}` is claimed by {' and '.join(claimed_by)}"))
+
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    try:
+        if not json.loads(manifest.read_text()).get("name"):
+            out.append(("plugin manifest", "declares no `name`"))
+    except (OSError, ValueError) as exc:
+        out.append(("plugin manifest", f"{manifest}: {exc}"))
+
+    # Absent from an installed copy, which ships the plugin directory on its own.
+    market = plugin.parent.parent / ".claude-plugin" / "marketplace.json"
+    if market.exists():
+        try:
+            data = json.loads(market.read_text())
+            for entry in data.get("plugins", []):
+                source = entry.get("source")
+                if isinstance(source, str) and source.startswith("./"):
+                    if not (market.parent.parent / source).is_dir():
+                        out.append(("marketplace", f"source does not exist: {source}"))
+        except ValueError as exc:
+            out.append(("marketplace", f"{market}: {exc}"))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lang", default="en", choices=["en", "ko"])
@@ -117,8 +189,10 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="hey-selftest-"))
     proj, home, empty = tmp / "proj", tmp / "home", tmp / "no-transcripts"
     origin, side = tmp / "origin.git", tmp / "side-worktree"
+    second = tmp / "second-project"
     proj.mkdir()
     empty.mkdir()
+    second.mkdir()
     today = date.today().isoformat()
     (proj / "TASKS.local.md").write_text(LEDGER.format(today=today))
 
@@ -190,41 +264,76 @@ def main() -> int:
         ([board, "show", "--metric", "code"], "board: code"),
         ([board, "show", "--metric", "tokens"], "board: tokens"),
         ([board, "streak"], "streak"),
-        ([board, "goal", "--set", "5.0"], "set goal"),
+        ([board, "goal", "--set", "5.0", "--daily", "0.4"], "set goal: per project",
+         "weekly 5.0 · daily 0.4"),
         ([board, "goal"], "goal pace"),
+        ([board, "streak"], "streak: uses the project's daily goal", "goal of 0.4"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
+        ([hey, "doctor"], "doctor"),
         ([hey, "scope", "all"], "scope all"),
     ]
     cases += [(["-c", src], label) for label, src in probes.items()]
 
-    failed = []
+    failed, total = [], 0
+
+    def check(label: str, passed: bool, detail: str = "") -> None:
+        nonlocal total
+        total += 1
+        print(f"  {'ok  ' if passed else 'FAIL'} {label}")
+        if not passed:
+            failed.append((label, detail))
+
+    for label, detail in static_checks():
+        check(f"static: {label}", False, detail)
+    if not failed:
+        check("static: manifests and component names", True)
+
     for case in cases:
         cmd, label = case[0], case[1]
         want = case[2] if len(case) > 2 else None
         code, out = run(cmd, env, proj)
-        ok = code == 0 and (want is None or want in out)
-        print(f"  {'ok  ' if ok else 'FAIL'} {label}")
-        if not ok:
-            failed.append((label, out if want is None or code else
-                           f"expected to find {want!r} in:\n{out}"))
+        passed = code == 0 and (want is None or want in out)
+        check(label, passed, out if want is None or code else
+              f"expected to find {want!r} in:\n{out}")
 
     # The blocker must be detected in whichever language the ledger uses, and only the
     # one real blocker -- `Third item` says "depending", which must not count.
     code, out = run([hey, "batch"], env, proj)
-    if "1 blocked item(s) excluded" not in out:
-        failed.append(("blocker detection", out))
-        print("  FAIL blocker detection")
-    else:
-        print("  ok   blocker detection")
+    check("blocker detection", "1 blocked item(s) excluded" in out, out)
 
-    for label, out in failed:
-        print(f"\n--- {label} ---\n{out}")
+    # The session-start hook is the only always-on component, and silence is its default.
+    # With no stdin it falls back to the cwd, which is what these two cases exercise.
+    hook = [str(HERE.parent / "hooks-handlers" / "on-session-start.py")]
+    hook_env = {**env, "CLAUDE_PLUGIN_ROOT": str(HERE.parent)}
+    code, out = run(hook, hook_env, proj)
+    check("hook: reports unpushed work", "neither committed nor pushed" in out, out)
+    code, out = run(hook, hook_env, tmp)
+    check("hook: silent outside a registered project", code == 0 and not out.strip(), out)
+
+    # One project is one repository, so a linked worktree must not register on its own.
+    code, out = run([hey, "add", str(side), "--name", "wt"], env, proj)
+    check("add: refuses a linked worktree", code != 0 and "linked worktree" in out, out)
+
+    # `--init` puts the template in place; `remove` is the inverse of `add`. Both run last
+    # because they change what is registered.
+    code, out = run([hey, "add", str(second), "--name", "second", "--init"], env, proj)
+    check("add --init: creates the ledger from the template",
+          code == 0 and "created from template" in out, out)
+    check("add --init: ledger is on disk", (second / "TASKS.local.md").exists(),
+          f"{second / 'TASKS.local.md'} was not written")
+    code, out = run([hey, "remove", "second"], env, proj)
+    check("remove: unregisters and keeps the ledger",
+          code == 0 and "unregistered: second" in out, out)
+    check("remove: ledger survived", (second / "TASKS.local.md").exists(), "")
+
+    for label, detail in failed:
+        print(f"\n--- {label} ---\n{detail}")
     if args.keep:
         print(f"\ntemp dir kept: {tmp}")
     else:
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"\n{len(cases) + 1 - len(failed)}/{len(cases) + 1} passed")
+    print(f"\n{total - len(failed)}/{total} passed")
     return 1 if failed else 0
 
 

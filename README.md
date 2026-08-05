@@ -14,6 +14,7 @@
 **Run your work off one markdown ledger.** Checklist, estimates, a morning briefing
 and an end-of-day record — printed from a file you can read and edit by hand.
 
+[![ci](https://img.shields.io/github/actions/workflow/status/keenkim1202/Hey/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/keenkim1202/Hey/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![stars](https://img.shields.io/github/stars/keenkim1202/Hey?style=flat-square&color=e3b341)](https://github.com/keenkim1202/Hey/stargazers)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)](https://code.claude.com/docs/en/plugins)
@@ -240,14 +241,26 @@ the personality lines are documented at the top of the file.
 ## Where data lives
 
 ```
-~/.hey/config.json          registered projects and their base branch, default scope,
-                            weekly goal, language
+~/.hey/config.json          registered projects with their base branch and goals,
+                            default scope, language
 ~/.hey/stats.jsonl          daily snapshots. Ranking, burndown, carry-over, variance
 <project>/TASKS.local.md    the ledger
 ```
 
 Nothing else, and nothing leaves the machine. A project's `base` is filled in when you
 register it; to change it, edit `config.json` or re-register with `--base <branch>`.
+
+**Goals are per project.** Several registered projects each get their own weekly and daily
+target, because one shared number measured against a fraction of the work makes every
+project look behind.
+
+When something reports nothing and it is not obvious why, ask for a checkup. It reports
+the base branch, missing ledger headings, items with no estimate and a damaged history
+file — each of which otherwise shows up as an empty answer rather than an error.
+
+```bash
+python3 plugins/hey/scripts/hey.py doctor
+```
 
 ---
 
@@ -267,16 +280,22 @@ plugins/hey/
 └── templates/            LEDGER.md, LEDGER.ko.md
 ```
 
-The self-test builds a fixture project with a git remote, a linked worktree and a seeded
-ledger, then runs every command against it. Nothing real is touched — `HEY_HOME` and the
-transcript directory both point into a temp directory.
+The self-test starts with static checks — manifests parse, every skill declares a name and
+a description, no two components claim the same name — then builds a fixture project with
+a git remote, a linked worktree and a seeded ledger and runs every command against it.
+Nothing real is touched: `HEY_HOME` and the transcript directory both point into a temp
+directory.
 
 ```bash
 python3 plugins/hey/scripts/selftest.py
 python3 plugins/hey/scripts/selftest.py --lang ko
 ```
 
-Validate the manifests before pushing:
+CI runs both on Linux and macOS, and pins python 3.9 on Linux to hold the floor this
+README claims.
+
+Validating the manifests against Claude Code's own schema needs the CLI, so it stays a
+local step:
 
 ```bash
 claude plugin validate .

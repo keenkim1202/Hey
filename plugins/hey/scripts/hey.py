@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -24,6 +25,7 @@ from pathlib import Path
 HOME = Path(os.environ.get("HEY_HOME", Path.home() / ".hey"))
 CONFIG = HOME / "config.json"
 STATS = HOME / "stats.jsonl"
+TEMPLATES = Path(__file__).parent.parent / "templates"
 
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
@@ -98,6 +100,16 @@ def default_base(root: Path) -> str | None:
 def project_base(cfg: dict, p: dict) -> str | None:
     """Base branch for a project: what `add` recorded, else detected from the remote."""
     return p.get("base") or cfg.get("base_branch") or default_base(Path(p["root"]))
+
+
+def project_setting(cfg: dict, p: dict, key: str, default=None):
+    """A setting read per project, falling back to the global value.
+
+    Goals belong to a project, not to the machine. With several registered, one shared
+    weekly target is measured against each project's slice of the work, so every card
+    reports the same goal and every one of them looks behind.
+    """
+    return p[key] if key in p else cfg.get(key, default)
 
 
 def ahead_of_base(worktree: Path, base: str | None) -> tuple[list[str], bool]:
@@ -301,6 +313,12 @@ class Ledger:
                 cur[1].append(ln.strip()[2:])
         return days
 
+    def has_section(self, key: str, level: str = "## ") -> bool:
+        """Is the heading present at all? A section can exist and still be empty."""
+        names = S.section_aliases(key)
+        return any(ln.startswith(level) and ln[len(level):].strip().startswith(names)
+                   for ln in self.lines)
+
     def next_up(self) -> list[str]:
         body = self.section_body("next", level="### ")
         return [ln.strip() for ln in body if re.match(r"^\d+\.", ln.strip())]
@@ -431,9 +449,26 @@ def cmd_add(args, cfg):
     root = Path(args.root).expanduser().resolve()
     if not root.is_dir():
         die(f"not a directory: {root}")
+    # One project is one repository. A linked worktree registered on its own would keep a
+    # second ledger and its own history, and `resolve` would never match it anyway
+    # because it resolves the cwd to the main root.
+    main_root = git_root(root)
+    if main_root and main_root != root:
+        die(f"{root} is a linked worktree of {main_root}. Register the main repository "
+            f"instead - its worktrees are already counted with it")
     ledger = Path(args.ledger).expanduser().resolve() if args.ledger else root / "TASKS.local.md"
     name = args.name or root.name
     base = args.base or default_base(root)
+
+    created = False
+    if args.init and not ledger.exists():
+        tpl = TEMPLATES / ("LEDGER.ko.md" if S.lang(cfg) == "ko" else "LEDGER.md")
+        if not tpl.exists():
+            die(f"template not found: {tpl}")
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(tpl.read_text())
+        created = True
+
     entry = {"name": name, "root": str(root), "ledger": str(ledger)}
     if base:
         entry["base"] = base
@@ -441,14 +476,140 @@ def cmd_add(args, cfg):
     cfg["projects"].append(entry)
     cfg["projects"].sort(key=lambda p: p["name"])
     save_config(cfg)
-    print(f"registered: {name}\n  root:   {root}\n  ledger: {ledger}"
-          f"{'' if ledger.exists() else '  [missing - copy templates/LEDGER.md]'}")
+
+    if created:
+        note = "  [created from template]"
+    elif ledger.exists():
+        note = ""
+    else:
+        note = "  [missing - re-run with --init]"
+    print(f"registered: {name}\n  root:   {root}\n  ledger: {ledger}{note}")
     if base:
         print(f"  base:   origin/{base}"
               f"{'' if args.base else '  (detected)'}")
     else:
         print("  base:   unresolved - unpushed commits cannot be counted. "
               "Re-run with `--base <branch>`")
+    if created:
+        print("  the ledger is local state. Add it to .git/info/exclude")
+
+
+def cmd_remove(args, cfg):
+    """Unregister a project. Neither the ledger nor the recorded history is touched."""
+    hits = [p for p in cfg["projects"] if p["name"] == args.name]
+    if not hits:
+        die(f"unknown project: {args.name}. Run `hey.py projects` to list them")
+    cfg["projects"] = [p for p in cfg["projects"] if p["name"] != args.name]
+    save_config(cfg)
+    kept = sum(1 for r in read_stats() if r["project"] == args.name)
+    print(f"unregistered: {args.name}")
+    print(f"  the ledger at {hits[0]['ledger']} was left alone")
+    if kept:
+        print(f"  {kept} recorded day(s) stay in {STATS}. Registering the same name again "
+              f"picks them back up")
+
+
+def cmd_doctor(args, cfg):
+    """Report what is misconfigured, in one place.
+
+    Almost everything that goes wrong here goes wrong quietly. A base branch that cannot
+    be resolved, a ledger missing the heading a command reads, a damaged history line —
+    each produces an empty or zero answer instead of an error, so they are collected here
+    where they can be seen.
+    """
+    counts = {"FAIL": 0, "warn": 0}
+
+    def say(level: str, msg: str) -> None:
+        counts[level] = counts.get(level, 0) + 1
+        print(f"  {level:<5} {msg}")
+
+    ok = lambda msg: print(f"  ok    {msg}")  # noqa: E731
+
+    print("environment")
+    v = sys.version_info
+    label = f"python {v.major}.{v.minor}.{v.micro}"
+    ok(label) if v >= (3, 9) else say("FAIL", f"{label} - 3.9 or newer is required")
+    for tool, required in (("git", True), ("gh", False)):
+        found = shutil.which(tool)
+        if found:
+            ok(f"{tool} at {found}")
+        elif required:
+            say("FAIL", f"{tool} not found - nothing that reads a repository will work")
+        else:
+            say("warn", f"{tool} not found - the PR log step is skipped")
+    ok(f"language {S.lang(cfg)}")
+
+    print("config")
+    ok(str(CONFIG)) if CONFIG.exists() else say("warn", f"{CONFIG} does not exist yet")
+    if not cfg["projects"]:
+        say("warn", "no projects registered. `hey.py add <path> --init`")
+
+    for p in cfg["projects"]:
+        print(f"project {p['name']}")
+        root = Path(p["root"])
+        if not root.is_dir():
+            say("FAIL", f"root is gone: {root}. `hey.py remove {p['name']}`")
+            continue
+        ok(f"root {root}")
+        if not git_root(root):
+            say("warn", "not a git repository - code counts and dirty checks stay empty")
+        else:
+            base = project_base(cfg, p)
+            if not base:
+                say("FAIL", "base branch unresolved - unpushed commits are never counted. "
+                            'Set "base" for this project')
+            elif _sh(["git", "rev-parse", "--verify", "--quiet",
+                      f"refs/remotes/origin/{base}"], root):
+                ok(f"base origin/{base}")
+            else:
+                say("FAIL", f"origin/{base} does not exist - unpushed commits are never "
+                            f"counted. Re-add with --base <branch>")
+            n = len(worktree_roots(root))
+            ok(f"{n} worktree(s) counted")
+
+        led = Path(p["ledger"])
+        if not led.exists():
+            say("FAIL", f"ledger missing: {led}. `hey.py add {root} --init`")
+            continue
+        ok(f"ledger {led}")
+        ledger = Ledger(p)
+        for key in ("notes", "log", "next", "prs", "summary"):
+            level = "### " if key == "next" else "## "
+            if not ledger.has_section(key, level):
+                names = " / ".join(S.section_aliases(key))
+                say("warn", f"no `{names}` heading - whatever reads it returns nothing")
+        if not ledger.items:
+            say("warn", "no checklist items found. Is the estimate format `N MD / AI M`?")
+        else:
+            g = ledger.progress()
+            ok(f"{len(ledger.items)} item(s), {g['cb_total']} box(es), AI {g['total_ai']}")
+            missing = [i for i in ledger.items if not i["ai"]]
+            if missing:
+                say("warn", f"{len(missing)} item(s) carry no estimate, so they count "
+                            f"toward boxes but not toward effort")
+
+    print("history")
+    if not STATS.exists():
+        say("warn", f"{STATS} does not exist yet. Run `board.py collect`")
+    else:
+        raw = [ln for ln in STATS.read_text().splitlines() if ln.strip()]
+        rows = read_stats()
+        if len(rows) != len(raw):
+            say("FAIL", f"{len(raw) - len(rows)} damaged line(s) in {STATS}")
+        else:
+            ok(f"{len(rows)} recorded day(s)")
+        orphans = sorted({r["project"] for r in rows} - {p["name"] for p in cfg["projects"]})
+        if orphans:
+            say("warn", f"history for unregistered project(s): {', '.join(orphans)}")
+
+    print()
+    if counts["FAIL"]:
+        print(f"{counts['FAIL']} problem(s), {counts['warn']} warning(s)")
+    elif counts["warn"]:
+        print(f"no problems, {counts['warn']} warning(s)")
+    else:
+        print("all checks passed")
+    sys.exit(1 if counts["FAIL"] else 0)
 
 
 def cmd_scope(args, cfg):
@@ -900,6 +1061,11 @@ def main() -> None:
     sp.add_argument("--name")
     sp.add_argument("--base", help="branch to measure unpushed commits against "
                                   "(default: the remote's own default branch)")
+    sp.add_argument("--init", action="store_true",
+                    help="create the ledger from templates/LEDGER.md if it is missing")
+    sp = add("remove", cmd_remove, help="unregister a project (keeps ledger and history)")
+    sp.add_argument("name")
+    add("doctor", cmd_doctor, help="report anything misconfigured")
     sp = add("scope", cmd_scope, help="set the default scope")
     sp.add_argument("value", choices=["current", "all"])
     add("resolve", cmd_resolve, help="which project the cwd belongs to")
