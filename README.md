@@ -3,10 +3,10 @@
 ```
         ─── hey ─────────────────────────  2026-08-05 (Wed)
 
-         Yesterday   CSV import pipeline merged (#20)
-         Pick up     wt-checkout  1 commit(s), no PR
-         Checklist   36 / 155 boxes    ████░░░░░░░░░░░░░░
-         Today       AI 0.4 of 1.0     two subitems you can close
+         🕘 Yesterday   CSV import pipeline merged (#20)
+         🔧 Pick up     wt-checkout  1 commit(s), no PR
+         📋 Checklist   3 / 13 boxes      ████░░░░░░░░░░░░░░
+         🎯 Today       AI 0.4 of 1.0     two subitems you can close
 ```
 
 # hey
@@ -19,13 +19,15 @@ and an end-of-day record — printed from a file you can read and edit by hand.
 [![stars](https://img.shields.io/github/stars/keenkim1202/Hey?style=flat-square&color=e3b341)](https://github.com/keenkim1202/Hey/stargazers)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)](https://code.claude.com/docs/en/plugins)
 [![python](https://img.shields.io/badge/python-3.9%2B-3776ab?style=flat-square)](https://www.python.org/)
-[![no server](https://img.shields.io/badge/data-stays%20local-2ea043?style=flat-square)](#where-data-lives)
+[![no server](https://img.shields.io/badge/data-stays%20local-2ea043?style=flat-square)](#-where-data-lives)
+
+**English** · [한국어](docs/ko/README.ko.md)
 
 </div>
 
 ---
 
-## Before / after
+## ⚡ Before / after
 
 **Before.** It is Wednesday morning. What did you do on Tuesday? You scroll `git log`,
 open three worktrees to find the one with uncommitted changes, guess how much of the
@@ -34,33 +36,55 @@ sprint is left, and start on whatever is loudest.
 **After.** One command, one card.
 
 ```
-─── orchard ───────────────────────────────────── 2026-08-05 (Wed)
+─── orchard ───────────────────────────────────────────────── 2026-08-05 (Wed)
 
- Yesterday  08-04 (Tue)
+🕘 Yesterday  08-04 (Tue)
    · CSV import pipeline merged (#20). 603 rows mapped to the catalog
    · Currency entity merged (#19)
 
- Pick up here
+🔧 Pick up here
    · wt-checkout  feat/csv-import  1 commit(s), no PR
-       Modules/Catalog/Sources/CsvImporter.swift
 
- Checklist   36 / 155 boxes closed      (23.2%)  ████░░░░░░░░░░░░░░
- Effort      0.0 / 81.25 AI-days closed 81.25 left · 7.5 in progress · 1 AI-day = 8h
- This week   0.0 / 5.0 AI-days          3.0 behind pace (Mon-Fri)
+📋 Progress
+   Checklist   3 / 13 boxes closed        (23.1%)  ████░░░░░░░░░░░░░░
+   Effort      0.4 / 5.6 AI-days closed   5.2 left · 1.0 in progress
+   This week   0.6 / 5.0 AI-days          2.4 behind pace (Mon-Fri)
 
- Output  08-04 (Tue)
+📈 Output  08-04 (Tue)
    closed   0.00 AI-days        best 1.64 on 07-29 (Wed)
    code     38,330 lines        best 38,330 lines on 08-04 (Tue)
    tokens   1.9M                best 4.2M on 07-30 (Thu)
+    1  07-29 (Wed)  ████████████████████      1.64  peak
+    2  07-30 (Thu)  █████████▊                0.80
+    3  08-03 (Mon)  ███████▎                  0.60
+
+🎯 Today
+   1. OrchardClient transport — `AuthMiddleware` and `RetryingMiddleware`
+      are what is left. #19 landed the token side, so the 401 refresh has a
+      place to attach
+   2. Domain/Data Account — country list and social login wiring. Two
+      Onboarding stubs come out here
+   3. Navigation module — the two `TODO(routing)` markers in Onboarding
+      hang on this
+
+🚧 Blocked 3
+   · Backend to declare 2xx on 34 operations
+   · Prod host
+   · X-Region header: required or not
 ```
 
+Seven emoji mark the sections, and they are the only ones the card uses. **This week**
+appears once a weekly goal is set, and **Output** once there are recorded days to compare
+against — a fresh install shows neither.
+
 The numbers come from scripts, not from the model reading and adding things up. The
-judgement on top of them — what to pick up, what to skip, what is actually blocked —
-is the part a script cannot do.
+judgement underneath them — what to pick up, what to skip, what is actually blocked — is
+the part a script cannot do. The card itself is printed as-is; the skills are not allowed
+to summarise it away.
 
 ---
 
-## How it works
+## 🧩 How it works
 
 Three pieces, and only one of them is yours to maintain.
 
@@ -87,7 +111,7 @@ it is good at.
 
 ---
 
-## Install
+## 📦 Install
 
 In a terminal, one line:
 
@@ -128,7 +152,7 @@ Codex reads the same marketplace file, and Codex's own plugin validator passes:
 codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
 ```
 
-Codex loads the eight skills under `skills/`. It does not load `/hey` — that is a command
+Codex loads the nine skills under `skills/`. It does not load `/hey` — that is a command
 rather than a skill — and it does not load the session-start hook, because neither is a
 component a Codex plugin manifest accepts. Skills resolve their scripts through
 `$CLAUDE_PLUGIN_ROOT`, falling back to `$PLUGIN_ROOT`, which is the name Codex uses.
@@ -139,7 +163,7 @@ an issue.
 
 ---
 
-## Commands
+## 🎛 Commands
 
 | Command | What |
 |---|---|
@@ -159,7 +183,7 @@ the state that is easiest to lose. Otherwise it says nothing at all.
 
 ---
 
-## Estimates
+## 📐 Estimates
 
 Two numbers per item, because one is not enough to argue with.
 
@@ -185,7 +209,7 @@ reports what share of it sits at 1x.
 
 ---
 
-## Metrics
+## 📈 Metrics
 
 `/seeya` records three things once a day.
 
@@ -220,7 +244,7 @@ flattering number.
 
 ---
 
-## Things to know
+## 💡 Things to know
 
 - **Closed work cannot be backfilled.** The ledger holds only its current state, so daily
   output exists from the day recording starts. Code and token counts do backfill, since git
@@ -241,7 +265,7 @@ flattering number.
 
 ---
 
-## Language
+## 🌏 Language
 
 English by default. Set `"lang": "ko"` in `~/.hey/config.json`, or export `HEY_LANG=ko`, to
 switch the interface. Only user-facing text changes; stored data stays language-neutral.
@@ -256,7 +280,7 @@ the personality lines are documented at the top of the file.
 
 ---
 
-## Where data lives
+## 🗂 Where data lives
 
 ```
 ~/.hey/config.json          registered projects with their base branch and goals,
@@ -270,7 +294,12 @@ register it; to change it, edit `config.json` or re-register with `--base <branc
 
 **Goals are per project.** Several registered projects each get their own weekly and daily
 target, because one shared number measured against a fraction of the work makes every
-project look behind.
+project look behind. There is no goal until you set one, and the card's **This week** row
+stays hidden until then:
+
+```bash
+python3 plugins/hey/scripts/board.py goal --set 5.0
+```
 
 When something reports nothing and it is not obvious why, ask for a checkup. It reports
 the base branch, missing ledger headings, items with no estimate and a damaged history
@@ -282,7 +311,7 @@ python3 plugins/hey/scripts/hey.py doctor
 
 ---
 
-## Development
+## 🛠 Development
 
 ```
 plugins/hey/
@@ -297,7 +326,8 @@ plugins/hey/
 │   ├── board.py          daily output, leaderboards, the two cards
 │   ├── strings.py        every user-facing string, per language
 │   └── selftest.py       static checks, then every command against a fixture
-├── hooks/                the session-start hook
+├── hooks/hooks.json      when the session-start hook fires
+├── hooks-handlers/       on-session-start.py, what it runs
 └── templates/            LEDGER.md, LEDGER.ko.md
 ```
 
@@ -345,35 +375,48 @@ than rendering at 1x. Upload it under Settings, General, Social preview.
 
 ---
 
-## FAQ
+## ❓ FAQ
 
-**Does anything leave my machine?**
+### 🔒 Does anything leave my machine?
+
 No. There is no server and no telemetry. Ranking compares today against your own past
 records in `~/.hey/stats.jsonl`.
 
-**Do I have to commit the ledger?**
+### 📁 Do I have to commit the ledger?
+
 No, and you should not. It is per-user local state. `.git/info/exclude` is the usual home
 for it.
 
-**Why two estimate numbers instead of one?**
+### 🔢 Why two estimate numbers instead of one?
+
 Because `MD` is the number other people already think in, and `AI` is the number you
 actually deliver against. Keeping both makes a schedule negotiable — you can point at
 which multiplier you disagree with.
 
-**Why does the closed metric say 0 when I clearly worked all day?**
+### 0️⃣ Why does the closed metric say 0 when I clearly worked all day?
+
 Because no checkbox closed. That is usually items sized too large to close in a day. The
 metric is deliberately not smoothed; a zero is reported as a zero.
 
-**Can the model just edit my ledger however it likes?**
+### ✋ Can the model just edit my ledger however it likes?
+
 The skills forbid it. Recaps and briefings are read-only, `/hey-sync` edits only the lines
 that changed, estimates are never recomputed without a reason, and nothing is committed or
 pushed on your behalf.
 
-**Does it work with a monorepo, or several projects at once?**
+### 🗂 Does it work with a monorepo, or several projects at once?
+
 Yes. Register each project and set `scope all` for a morning sweep across them.
+
+### 👀 Why did I not see the card?
+
+You should — `/wassup` and `/seeya` paste the card into the reply verbatim before they say
+anything of their own. Tool output is shown to the model, not to you, so a card that is
+only summarised is a card you never saw. If you get prose without the block, that is a bug
+worth an issue.
 
 ---
 
-## License
+## 📄 License
 
 MIT. See [LICENSE](LICENSE).

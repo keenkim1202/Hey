@@ -31,6 +31,10 @@ python3 "$HEY" carryover --days 2           # what has been open across records
 python3 "$HEY" item "<phase>|<name>"        # one item's history, when asked why
 ```
 
+Here the card is a **source, not output** — the one exception to the print-the-card rule
+in `hey-ledger`. `/wassup` and `/seeya` paste it; a standup does not. What leaves this
+skill is three lines a person can say out loud.
+
 Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
 
 ## 2. Three lines, in this order

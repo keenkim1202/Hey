@@ -23,6 +23,11 @@ python3 "$BOARD" wrap
 `wrap` gathers today's commits, loose worktrees, today's notes, progress, weekly pace,
 the board and blockers in one pass. Use it instead of the individual commands.
 
+**Then paste what it printed, verbatim, in a fenced code block, as the first thing in
+your reply.** The user does not see tool output; a card you only summarise is a card they
+never saw. Reproduce it exactly — no re-headed markdown, no rebuilt table, no dropped
+section. Everything you write goes underneath it.
+
 ## 2. Write today into the work log
 
 **Newest first.** Insert directly under the work-log heading. Never delete a past day.
@@ -65,7 +70,9 @@ Three things get counted:
 | code | lines added and removed today, across every worktree of the project |
 | tokens | Claude Code transcript usage today. Cache reads excluded |
 
-The card already shows the board. Report the numbers **as printed**.
+`collect` prints the board again with today's row filled in. **Paste that block verbatim
+too** — it is the one part of the wrap-up that did not exist when you printed the card.
+Report the numbers **as printed**.
 
 ```
  Output  08-05 (Wed)
@@ -104,6 +111,7 @@ behind, say it was behind.
 ## Never
 
 - Never create a ledger inside a worktree. Never commit it
+- Never answer without the card. Summarising it in prose is not showing it
 - Never delete or merge past log days. The ledger accumulates
 - Never write down work that did not happen. Only what git confirms
 - Never check boxes or recount progress. That is `/hey-sync`

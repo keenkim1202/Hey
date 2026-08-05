@@ -24,8 +24,14 @@ python3 "$BOARD" brief
 output board and blockers in a single pass. **Do not fire the individual commands
 instead** — that costs ten round trips and floods the context for the same information.
 
+**Then paste what it printed, verbatim, in a fenced code block, as the first thing in
+your reply.** The user does not see tool output; if you summarise the card instead of
+showing it, they never see the card at all — which is the one thing they asked for.
+Reproduce it exactly: no re-headed markdown, no rebuilt table, no dropped section. Your
+judgement goes underneath it, in step 2.
+
 Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
-With scope `all`, `brief` prints one card per project.
+With scope `all`, `brief` prints one card per project — paste each one.
 
 Only reach for these when the card raises a specific question:
 
@@ -38,9 +44,10 @@ python3 "$HEY" batch                        # what could run in parallel
 `carryover` counts **recorded days, not calendar days** — a day nothing was recorded on is
 not a gap. Report it the way the script phrases it.
 
-## 2. What to say on top of the card
+## 2. What to write underneath the card
 
-The card is the data. Add judgement — that is the part a script cannot do.
+The card is the data, and it is already on screen. Add judgement below it — that is the
+part a script cannot do.
 
 ### Yesterday
 
@@ -90,6 +97,7 @@ the one item that would recover it.
 ## Never
 
 - Never edit the ledger. Brief only
+- Never answer without the card. Summarising it in prose is not showing it
 - Never guess the date. Call `date`
 - Never recompute estimates. Use the ledger's numbers, and flag rough splits
 - Never invent a log entry. Only report what git confirms

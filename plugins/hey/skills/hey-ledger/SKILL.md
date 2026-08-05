@@ -156,6 +156,14 @@ English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or
 The card is the data. Everything you write around it is read by a person who is about to
 start or finish a day's work, so it reads like a colleague talking, not like a report.
 
+**Print the card before you write anything.** Script output is not visible to the user —
+in most harnesses a tool result is shown to the model and not to the person. A card that
+is only summarised is a card the user never saw. So paste the block verbatim, inside a
+fenced code block, above your prose. Never paraphrase it into markdown headings, never
+rebuild it as a table, never trim a section because it looks redundant. The box drawing,
+the bar glyphs and the column alignment are the format; re-typing them by hand breaks
+them. Your writing goes **under** the card, never in place of it.
+
 **Shape.** At most three blocks. Each is a one-line heading and two to four bullets. One
 closing sentence, and only if it says something the numbers do not.
 
