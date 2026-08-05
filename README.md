@@ -300,6 +300,26 @@ The tone rules for the personality lines are documented at the top of the file.
 
 ---
 
+## 📏 Card width
+
+The card is 78 columns wide, which fits a standard terminal. On a wider one, set `HEY_WIDTH`
+to spread it out — lines fold less often, and fewer descriptions get clipped to a `…`:
+
+```bash
+export HEY_WIDTH=120
+```
+
+Anything outside 72 to 120 is clamped, and anything that is not a number is ignored. The
+floor is 72 because the **Progress** rows spend a fixed 51 columns on labels before the
+meter starts, so a narrower card cannot hold them.
+
+With `HEY_WIDTH` unset, a real terminal is measured and used. An agent running the scripts
+gets a pipe instead of a terminal, where there is nothing to measure and the 78 stands — so
+an agent that pastes the card into a chat should set `HEY_WIDTH` itself, a little under the
+true width to leave room for the margin the transcript adds.
+
+---
+
 ## 🗂 Where data lives
 
 ```
@@ -311,6 +331,9 @@ The tone rules for the personality lines are documented at the top of the file.
 
 Nothing else, and nothing leaves the machine. A project's `base` is filled in when you
 register it; to change it, edit `config.json` or re-register with `--base <branch>`.
+
+Token counts are read from the Claude Code transcripts under `~/.claude/projects`, which are
+only ever read. Point `HEY_TRANSCRIPTS` elsewhere if yours live somewhere else.
 
 **Goals are per project.** Several registered projects each get their own weekly and daily
 target, because one shared number measured against a fraction of the work makes every

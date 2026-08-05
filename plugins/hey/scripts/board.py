@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -373,7 +374,30 @@ RULE = "─"
 DOT = "·"
 
 
-WIDTH = 78  # Card width. Longer lines fold rather than wrap in the terminal.
+CARD_MIN, CARD_MAX = 72, 120
+
+
+def _card_width() -> int:
+    """Card width, resolved once at import so the layout defaults below inherit it.
+
+    `HEY_WIDTH` wins, then a real terminal, then 78. When stdout is a pipe -- which is
+    how an agent calls this -- probing the terminal only ever returns the 80-column
+    fallback, so it is not worth asking. An agent pasting the card into a chat should
+    set `HEY_WIDTH` a little under the true terminal width, to leave room for the
+    margin the transcript adds.
+
+    The floor is 72, not 60: the progress rows spend a fixed 51 columns on labels
+    before the meter starts, and anything narrower makes them overflow the card.
+    """
+    raw = (os.environ.get("HEY_WIDTH") or "").strip()
+    if raw.isdigit():
+        return max(CARD_MIN, min(CARD_MAX, int(raw)))
+    if sys.stdout.isatty():
+        return max(CARD_MIN, min(CARD_MAX, shutil.get_terminal_size().columns - 2))
+    return 78
+
+
+WIDTH = _card_width()  # Longer lines fold rather than wrap in the terminal.
 INDENT = "   "  # Content sits under a section marker, which is two columns plus a space.
 
 
@@ -606,7 +630,7 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     out += section("progress", S.card("progress_head", LANG)) + [
             f'{INDENT}{pad(S.card("checklist", LANG), W)}'
             f'{pad(S.card("boxes_closed", LANG, done=g["cb_done"], total=g["cb_total"]), V)}'
-            f'({g["cb_pct"]}%)  {meter(g["cb_done"], g["cb_total"], 18)}',
+            f'({g["cb_pct"]}%)  {meter(g["cb_done"], g["cb_total"], WIDTH - 60)}',
             f'{INDENT}{pad(S.card("effort", LANG), W)}'
             f'{pad(S.card("effort_val", LANG, done=done_ai, total=g["total_ai"]), V)}'
             f'{S.card("effort_note", LANG, left=remain, wip=g["wip_ai"])}']
