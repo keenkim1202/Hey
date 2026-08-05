@@ -338,18 +338,30 @@ class Ledger:
         An even split is the default and is right often enough, but not always: the last
         subitem of a ten-box module can be the whole remaining job, and scoring it at a
         tenth understates the day. A subitem may therefore claim a share with `[AI 0.3]`.
-        What is claimed comes off the top; the rest is split evenly among the boxes that
-        claimed nothing, which keeps an unannotated ledger scoring exactly as before.
 
-        Over-claiming does not silently rescale the item -- `doctor` reports it and the
-        remaining boxes simply share nothing, so the numbers stay traceable to the file.
+        **A closed box that claimed nothing keeps its plain even share, always.** Sharing
+        out the remainder across every unclaimed box instead would move boxes that are
+        already banked and recorded, so annotating a half-finished item would restate
+        output that past snapshots have already counted -- and `earned_ai` diffs those
+        snapshots, so the restatement lands as either a negative day or a double count.
+        Nothing you write today may change what a closed box was worth.
+
+        What is left after the claims and the closed shares goes to the open boxes that
+        claimed nothing, and never below zero. So the shares can add up to more than the
+        item's estimate, and that is the signal rather than a fault: it says the item was
+        under-estimated. `doctor` reports the excess; it is also what catches `[AI 3]`
+        written for `[AI 0.3]`.
         """
         weights = [None, *it["kid_ai"]]
-        claimed = sum(w for w in weights if w is not None)
-        free = [i for i, w in enumerate(weights) if w is None]
-        rest = max(0.0, it["ai"] - claimed)
-        share = rest / len(free) if free else 0.0
-        return [share if w is None else w for w in weights]
+        closed = [it["done"], *it["kids"]]
+        n = len(weights)
+        even = it["ai"] / n if n else 0.0
+        out = [w if w is not None else (even if c else None)
+               for w, c in zip(weights, closed)]
+        spoken = sum(x for x in out if x is not None)
+        free = [i for i, x in enumerate(out) if x is None]
+        share = max(0.0, it["ai"] - spoken) / len(free) if free else 0.0
+        return [share if x is None else x for x in out]
 
     @classmethod
     def earned(cls, it: dict) -> float:
@@ -363,9 +375,15 @@ class Ledger:
 
     @classmethod
     def overclaimed(cls, it: dict) -> float:
-        """How much the subitem shares exceed the item's own estimate, or 0."""
-        claimed = sum(w for w in it["kid_ai"] if w is not None)
-        return round(max(0.0, claimed - it["ai"]), 4) if it["ai"] else 0.0
+        """How much the box shares add up to beyond the item's own estimate, or 0.
+
+        Measured on the shares rather than the claims alone, because a closed box holds
+        its even share regardless -- so a claim can push the total over even when the
+        claim on its own would fit.
+        """
+        if not it["ai"]:
+            return 0.0
+        return round(max(0.0, sum(cls.box_ai(it)) - it["ai"]), 4)
 
     # -- aggregation
 
@@ -819,9 +837,10 @@ def cmd_doctor(args, cfg):
             over = [i for i in ledger.items if Ledger.overclaimed(i)]
             if over:
                 worst = max(over, key=Ledger.overclaimed)
-                say("warn", f"{len(over)} item(s) whose `[AI n]` subitem shares exceed the "
-                            f"item's own estimate, worst by {Ledger.overclaimed(worst)} on "
-                            f"`{worst['title']}`. The remaining boxes score nothing")
+                say("warn", f"{len(over)} item(s) whose box shares total more than the "
+                            f"item's estimate, worst by {Ledger.overclaimed(worst)} on "
+                            f"`{worst['title']}` — under-estimated by that much, or a "
+                            f"misplaced decimal. `/hey-tune` re-estimates it")
 
     print("history")
     if not STATS.exists():

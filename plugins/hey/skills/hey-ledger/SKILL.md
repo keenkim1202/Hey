@@ -87,11 +87,16 @@ Checklist item convention:
 - **A subitem may claim a share of that estimate with `[AI n]`.** Every box otherwise
   carries an even slice, which is wrong exactly when it matters: the last subitem of a
   ten-box module is often the whole remaining job, and a tenth of the estimate both
-  under-reports the day and makes `/wassup` split the number by hand. What is claimed comes
-  off the top and the rest is split evenly among the boxes that claimed nothing, so a
-  ledger with no claims scores exactly as it always did. Claim only where the even split
-  lies — annotating everything is the same work as estimating every subitem. `doctor`
-  reports claims that exceed the item's own estimate
+  under-reports the day and makes `/wassup` split the number by hand. Claim only where the
+  even split lies — annotating everything is the same work as estimating every subitem
+  - **A closed box keeps its plain even share no matter what you write.** Only the open
+    unclaimed boxes divide what is left. This is what makes it safe to annotate an item
+    that is already half done: past snapshots have banked those closed boxes, and moving
+    them would land as a lost day or a double-counted one
+  - So the shares can total **more** than the item's estimate, and that is a finding, not
+    a fault — it says the item was under-estimated by the difference. `doctor` reports it,
+    and re-estimating the item with `/hey-tune` is what clears it. The same report catches
+    `[AI 3]` typed for `[AI 0.3]`
 - A box is `[ ]`, `[x]` or `[X]`. Anything else is not a box and is counted nowhere
 - `MD` is a traditional man-day; `AI` is the man-day equivalent when using tooling.
   `AI 1.0` = one 8-hour day

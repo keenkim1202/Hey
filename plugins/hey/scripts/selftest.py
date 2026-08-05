@@ -171,14 +171,27 @@ from hey import Ledger, load_config, earned_ai
 led = Ledger(load_config()['projects'][0])
 by = {{i['title']: i for i in led.items}}
 
-# `First item` is AI 0.4 over 4 boxes. `part three` claims 0.3, so the other three split
-# the remaining 0.1 -- an even split would have given every box 0.1 and scored the whole
-# item's remainder at a third of what its last subitem is actually worth.
+# `First item` is AI 0.4 over 4 boxes, two of them already closed. `part three` claims 0.3.
+# The closed boxes keep their plain even 0.1 -- nothing written now may change what a box
+# already banked -- and the one open unclaimed box gets whatever is left, which is nothing.
 first = by['First item']
 assert Ledger.boxes(first) == (2, 4), Ledger.boxes(first)
 shares = [round(x, 4) for x in Ledger.box_ai(first)]
-assert shares == [0.0333, 0.0333, 0.0333, 0.3], shares
-assert Ledger.earned(first) == 0.0667, Ledger.earned(first)
+assert shares == [0.0, 0.1, 0.1, 0.3], shares
+assert Ledger.earned(first) == 0.2, Ledger.earned(first)
+# The shares now total 0.5 against an estimate of 0.4, and that is the finding: the item
+# was under-estimated by 0.1. Rescaling to hide it is what would move a closed box.
+assert Ledger.overclaimed(first) == 0.1, Ledger.overclaimed(first)
+
+# The property the whole design turns on: annotating an item must not restate what it has
+# already earned. Same item, same closed boxes, claim added to the open one.
+plain = {{'ai': 1.0, 'done': False, 'kids': [True] * 8 + [False], 'kid_ai': [None] * 9}}
+claimed = dict(plain, kid_ai=[None] * 8 + [0.3])
+assert Ledger.earned(plain) == Ledger.earned(claimed), (Ledger.earned(plain),
+                                                        Ledger.earned(claimed))
+# And closing the claimed box is then worth exactly what it claimed.
+after = dict(claimed, kids=[True] * 9)
+assert round(Ledger.earned(after) - Ledger.earned(claimed), 4) == 0.3
 
 # An item with no claims anywhere splits evenly, which is what keeps every ledger written
 # before shares existed scoring exactly as it did.
@@ -200,7 +213,7 @@ assert Ledger.earned(over) == 0.7, Ledger.earned(over)
 def snap(earned):
     return {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 2, 'boxes': 4,
                         'earned': earned}}]}}
-assert earned_ai(snap(0.0667), snap(0.3667)) == 0.3, earned_ai(snap(0.0667), snap(0.3667))
+assert earned_ai(snap(0.2), snap(0.5)) == 0.3, earned_ai(snap(0.2), snap(0.5))
 # Records written before shares existed have no `earned`, and must still be readable.
 old = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 1, 'boxes': 4}}]}}
 new = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 2, 'boxes': 4}}]}}
