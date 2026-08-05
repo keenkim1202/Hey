@@ -57,7 +57,7 @@ commits. Say which one you are looking at. **Never invent an entry that is not t
 
 ### Where to pick up
 
-If a worktree holds commits with no PR, or uncommitted files, **lead with that.** It is
+If a worktree holds unpushed commits, or uncommitted files, **lead with that.** It is
 the state most easily lost. Point at the directory and branch; do not switch to it.
 
 ### Today's load

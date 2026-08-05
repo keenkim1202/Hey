@@ -596,6 +596,11 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
                                    LANG, n=gone))
             if dirty:
                 bits.append(S.card("uncommitted", LANG, n=dirty))
+            # Which item this branch belongs to, when the ledger says. The whole point of
+            # this section is knowing what is at risk, and a directory name is not that.
+            owner = led.item_for_branch(br)
+            if owner:
+                bits.append(owner["title"])
             out.append(clip(f"{bullet}{w.name}  {br or 'detached'}  {' · '.join(bits)}"))
             for f in _touched(w, focus):
                 out.append(clip(f"{INDENT}    {f}"))

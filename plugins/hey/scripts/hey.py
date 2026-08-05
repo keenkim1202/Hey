@@ -30,6 +30,7 @@ TEMPLATES = Path(__file__).parent.parent / "templates"
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 
+DOT = "\u00b7"
 WEEKDAY_KO = S.WEEKDAYS["ko"]  # kept for callers that import it
 BLOCKER_WORDS = S.BLOCKER_WORDS  # per-language; detection uses the union
 
@@ -134,6 +135,10 @@ def git_root(cwd: Path) -> Path | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     return Path(common).parent if common.endswith("/.git") else Path(common)
+
+
+def _lines_of(out: str) -> list:
+    return [ln.strip() for ln in out.split("\n") if ln.strip()]
 
 
 def _sh(cmd: list[str], cwd: Path) -> str:
@@ -297,6 +302,9 @@ class Ledger:
     KID_AI = re.compile(r"\[AI (\d+\.?\d*)\]")
     # When a blocker started waiting, so its age does not depend on recorded history.
     SINCE = re.compile(r"\[since (\d{4}-\d{2}-\d{2})\]")
+    # Which branch an item's work lives on. Branches outlast worktrees, whose paths are
+    # temporary, and they are what commits and pull requests actually attach to.
+    BRANCH = re.compile(r"\[branch ([^\]\s]+)\]")
 
     def __init__(self, project: dict):
         self.project = project
@@ -322,6 +330,7 @@ class Ledger:
                     "done": m[1].lower() == "x",
                     "kids": [],
                     "kid_ai": [],
+                    "branches": self.BRANCH.findall(m[2]),
                     "md": float(est[1]) if est else 0.0,
                     "ai": float(est[2]) if est else 0.0,
                 }
@@ -330,6 +339,9 @@ class Ledger:
                 cur["kids"].append(k[1].lower() == "x")
                 w = self.KID_AI.search(k[2])
                 cur["kid_ai"].append(float(w[1]) if w else None)
+                # A subitem is usually the thing that becomes one branch and one PR, so
+                # the marker is read there too and credited to the item that owns it.
+                cur["branches"] += self.BRANCH.findall(k[2])
 
     @staticmethod
     def _title(text: str) -> str:
@@ -471,6 +483,25 @@ class Ledger:
                             "since": m[1] if m else None,
                             "days": days if days is None or days >= 0 else None})
         return out
+
+    def item_for_branch(self, branch: str) -> dict | None:
+        """The item whose `[branch ...]` marker names this branch, if any.
+
+        Without this the two halves never meet: `batch` knows the items and `dirty` knows
+        the worktrees, and which item a loose branch belongs to lives only as prose in the
+        work log. Reading it off the ledger keeps the join where every other number comes
+        from, instead of guessing it from how a branch happens to be named.
+        """
+        if not branch:
+            return None
+        for it in self.items:
+            if branch in it["branches"]:
+                return it
+        return None
+
+    def branch_markers(self) -> list[tuple[str, str]]:
+        """(branch, item title) for every marker in the ledger."""
+        return [(b, it["title"]) for it in self.items for b in it["branches"]]
 
     @staticmethod
     def key(it: dict) -> str:
@@ -853,6 +884,22 @@ def cmd_doctor(args, cfg):
                 say("warn", f"{len(gaps)} logged day(s) never recorded: {shown}. "
                             f"`board.py collect --date <day>` recovers code and tokens, "
                             f"but closed boxes are gone -- the ledger only holds today")
+            # A marker pointing at a branch git has never heard of is either a typo or a
+            # branch that was deleted after merging. Both leave the join silently dead, and
+            # a dead join reads exactly like an item that has no branch.
+            markers = ledger.branch_markers()
+            if markers:
+                known = set(_lines_of(_sh(["git", "branch", "--format=%(refname:short)"],
+                                          root)))
+                known |= set(_lines_of(_sh(["git", "branch", "-r",
+                                            "--format=%(refname:short)"], root)))
+                known |= {b[len("origin/"):] for b in known if b.startswith("origin/")}
+                stale = sorted({b for b, _ in markers if b not in known})
+                if stale:
+                    say("warn", f"{len(stale)} `[branch ...]` marker(s) name a branch git "
+                                f"does not have: {', '.join(stale[:3])}")
+                else:
+                    ok(f"{len(markers)} branch marker(s), all resolvable")
             over = [i for i in ledger.items if Ledger.overclaimed(i)]
             if over:
                 worst = max(over, key=Ledger.overclaimed)
@@ -1195,6 +1242,7 @@ def cmd_dirty(args, cfg):
     """Work that never left as a commit or PR. The easiest state to forget, so it gets its own view."""
     for p in projects_in_scope(cfg, args.scope, args.project):
         root = Path(p["root"])
+        led = Ledger(p) if Path(p["ledger"]).exists() else None
         base = args.base or project_base(cfg, p)
         found, comparable = False, True
         for w in worktree_roots(root):
@@ -1205,7 +1253,9 @@ def cmd_dirty(args, cfg):
             comparable = comparable and ok
             if st or gone or ahead:
                 found = True
-                print(f"[{p['name']}] {w}  ({br or 'detached'})")
+                owner = led.item_for_branch(br) if led else None
+                whose = f"  {DOT} {owner['title']}" if owner else ""
+                print(f"[{p['name']}] {w}  ({br or 'detached'}){whose}")
                 # Two different facts, and only the first is work at risk. A pushed branch
                 # awaiting review is ahead of the base as well, and calling that unpushed
                 # is what made this view cry wolf.

@@ -4,7 +4,7 @@
         ─── hey ─────────────────────────  2026-08-05 (Wed)
 
          🕘 Yesterday   Theme bundler swapped to esbuild (#20)
-         🔧 Pick up     wt-checkout  1 commit(s), no PR
+         🔧 Pick up     wt-checkout  1 commit(s) unpushed
          📋 Checklist   3 / 13 boxes      ████░░░░░░░░░░░░░░
          🎯 Today       AI 0.4 of 1.0     two subitems you can close
 ```
@@ -35,7 +35,7 @@ printed from a file you can read and edit by hand.
 
 **Before.** It is Wednesday morning. What did I do yesterday..? `git log` gives me commit
 messages and none of it is coming back. Three worktrees are open and I cannot tell how far
-any of them got, and I am fairly sure one is sitting on a commit with no PR — but which
+any of them got, and I am fairly sure one is sitting on a commit no remote has — but which
 branch was it.
 
 And how much of the sprint is left, anyway. So I start on whatever is loudest, and
@@ -51,7 +51,7 @@ tomorrow I go looking for yesterday's half-finished work all over again.
    · Syntax highlighter wired into the render step (#19)
 
 🔧 Pick up here
-   · wt-checkout  feat/toc-anchors  1 commit(s), no PR
+   · wt-checkout  feat/toc-anchors  1 commit(s) unpushed
 
 📋 Progress
    Checklist   3 / 13 boxes closed        (23.1%)  ████░░░░░░░░░░░░░░
@@ -190,7 +190,7 @@ an issue.
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
 | `/hey-standup` | three lines for a standup. No metrics, no percentages |
 
-One session-start hook. It speaks **only when work is sitting uncommitted with no PR** —
+One session-start hook. It speaks **only when work is uncommitted or unpushed** —
 the state that is easiest to lose. Otherwise it says nothing at all.
 
 ---
@@ -263,8 +263,12 @@ flattering number.
   output exists from the day recording starts. Code and token counts do backfill, since git
   and the transcripts keep history. For the same reason, estimate variance only measures
   items seen unfinished before they closed
-- **Unpushed commits are measured against the remote's default branch**, detected at
-  registration and stored as `base`. When it cannot be resolved, the report says so instead
+- **Unpushed means no remote has it** — nothing tracked upstream, or commits past the
+  upstream. A pushed branch waiting on review is not unpushed, and the card reports it
+  separately rather than filing it under work about to be lost. Whether a pull request
+  exists is never checked, so nothing claims it either
+- **Commits absent from the base are measured against the remote's default branch**,
+  detected at registration and stored as `base`. When it cannot be resolved, the report says so instead
   of printing zero — a wrong base makes the comparison fail silently, which is how work
   that never left your machine goes unnoticed
 - **Item names are keys.** Past snapshots link through `<phase>|<item name>`, so renaming an

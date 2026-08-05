@@ -22,7 +22,7 @@ python3 "$HEY" dirty
 
 Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
 
-**Loose work outranks the list.** If `dirty` reports commits with no PR or uncommitted
+**Loose work outranks the list.** If `dirty` reports unpushed commits or uncommitted
 files, that is the next item — say so and name the worktree and branch. Work that only
 exists on one machine is the one thing that can vanish.
 

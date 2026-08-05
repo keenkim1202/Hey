@@ -108,6 +108,12 @@ Checklist item convention:
   `TBD`, `needs decision`, `pending`, or the Korean equivalents). Blocked items drop out
   of `/hey-run` candidates and get aged by `/wassup`. The word has to stand on its own —
   `depending` is not `pending`, and `대기업` is not `대기`
+- **Name the branch an item's work lives on with `[branch <name>]`**, on the item line or
+  on the subitem that becomes that branch. Without it the two halves never meet: `batch`
+  knows the items, `dirty` and the card know the worktrees, and which item a loose branch
+  belongs to survives only as prose in the work log. With it, `dirty` and the card's
+  pick-up section name the item at risk instead of only a directory. `doctor` reports a
+  marker whose branch git no longer has — a typo, or a branch deleted after merging
 - **Date a blocker with `[since YYYY-MM-DD]`.** Age is the number that decides whether to
   go chase it, and `carryover` can only infer it after several days are on record — while a
   blocker is often older than the ledger. With a date the card shows the wait from day one.

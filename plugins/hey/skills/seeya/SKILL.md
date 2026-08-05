@@ -37,7 +37,7 @@ section. Everything you write goes underneath it.
 
 - Wired the app root: OnboardingView + toast host in OrchardApp (#21)
 - CartStore: loading state done. **3-stage error handler not started** — worktree `wt-checkout`,
-  branch `feat/cart-state`, 2 commits, no PR
+  branch `feat/cart-state`, 2 commits unpushed
 - Sheet source typo still unfixed (carried from yesterday)
 ```
 
@@ -56,7 +56,7 @@ section. Everything you write goes underneath it.
 - **For unfinished work, say how far it got and what is left** — worktree, branch, whether
   it is committed
 - **Never drop a carry-over.** If yesterday flagged it and today did not fix it, write it again
-- If changes exist with no commit and no PR, **say so explicitly**. Losing the working
+- If changes exist with no commit, or commits no remote has, **say so explicitly**. Losing the working
   tree loses the work
 
 Today's notes are evidence too. Processed notes become results; unprocessed ones become
@@ -108,7 +108,7 @@ sized too large. **Never substitute another metric to make the day look producti
 2. Domain/Data Account — country list and social login wiring            AI 0.7
 
 [Clean up first]
-- `wt-checkout` has 2 commits sitting with no PR
+- `wt-checkout` has 2 commits no remote has
 ```
 
 Close with one sentence, grounded in the numbers that actually printed. If the day was

@@ -54,8 +54,8 @@ LEDGER = """# fixture ledger
 - [ ] **First item** — touches `Modules/Alpha` — 3 MD / AI 0.4
   - [x] part one
   - [X] part two
-  - [ ] part three `[AI 0.3]`
-- [ ] **Second item** — touches `Scripts/Beta` — 3 MD / AI 0.6
+  - [ ] part three `[AI 0.3]` `[branch side]`
+- [ ] **Second item** — touches `Scripts/Beta` — 3 MD / AI 0.6 `[branch deleted-long-ago]`
 - [ ] **Third item** — depending on the account API — 1 MD / AI 0.2
 - [x] **Settled earlier** — finished before recording began — 2 MD / AI 0.5
 - [x] **Groundwork** — done long ago, deliberately never estimated
@@ -406,6 +406,9 @@ def main() -> int:
         ([hey, "next"], "next up"),
         ([hey, "dirty"], "dirty: an upstream makes the count unpushed", "1 commit(s) unpushed"),
         ([hey, "dirty"], "dirty: linked worktree seen", side.name),
+        ([hey, "dirty"], "dirty: names the item a loose branch belongs to", "First item"),
+        ([hey, "doctor"], "doctor: flags a marker whose branch is gone",
+         "name a branch git does not have: deleted-long-ago"),
         ([hey, "dirty", "--base", "nope"], "dirty: unresolved base is not silent",
          "were NOT checked"),
         ([hey, "batch"], "loop candidates"),
@@ -520,6 +523,20 @@ def main() -> int:
     code, out = run([hey, "dirty"], env, proj)
     check("dirty: a pushed branch is not called unpushed",
           "pushed but not in origin/main" in out and "commit(s) unpushed" not in out, out)
+    # The card reads its own worktree state, so assert there too -- `dirty` passing does
+    # not prove the card stopped calling a pushed branch loose.
+    probe = ("import sys; sys.path.insert(0, %r)\n"
+             "import board as b\n"
+             "from pathlib import Path\n"
+             "rows = b._worktree_state(Path(%r), 'main')\n"
+             "hit = [r for r in rows if r[1] == 'in-review']\n"
+             "assert hit, [r[1] for r in rows]\n"
+             "w, br, dirty, gone, has_up = hit[0]\n"
+             "assert (gone, has_up) == (0, True), (gone, has_up)\n"
+             % (str(HERE), str(proj)))
+    code, out = run(["-c", probe], env, proj)
+    check("card: a pushed branch counts as zero unpushed", code == 0, out)
+
     # Put the fixture back where the checks below expect to find it.
     git("checkout", "-q", "squashed")
     code, out = run([hey, "doctor"], env, proj)

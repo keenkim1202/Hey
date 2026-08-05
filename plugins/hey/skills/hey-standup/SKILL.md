@@ -65,7 +65,7 @@ Blocked     Server header contract undecided - waiting on backend since Monday
 
 ## 4. Uncommitted work is a standup item
 
-If a worktree holds commits with no PR, that belongs on the Today line, first. It is the
+If a worktree holds unpushed commits, that belongs on the Today line, first. It is the
 thing most likely to surprise someone else. Point at the branch; do not push it.
 
 ## Wording
