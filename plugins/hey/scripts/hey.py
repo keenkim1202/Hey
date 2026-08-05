@@ -626,9 +626,15 @@ def cmd_doctor(args, cfg):
         else:
             g = ledger.progress()
             ok(f"{len(ledger.items)} item(s), {g['cb_total']} box(es), AI {g['total_ai']}")
-            missing = [i for i in ledger.items if not i["ai"]]
+            # An estimate only matters for work still ahead. A finished item's estimate is
+            # moot, and a blocker is somebody else's effort — a ledger that deliberately
+            # leaves both blank is right to, so warning about them is noise.
+            blocked = {b["key"] for b in ledger.blockers()}
+            missing = [i for i in ledger.items
+                       if not i["ai"] and ledger.state(i) != S.DONE
+                       and ledger.key(i) not in blocked]
             if missing:
-                say("warn", f"{len(missing)} item(s) carry no estimate, so they count "
+                say("warn", f"{len(missing)} unfinished item(s) carry no estimate, so they count "
                             f"toward boxes but not toward effort")
 
     print("history")

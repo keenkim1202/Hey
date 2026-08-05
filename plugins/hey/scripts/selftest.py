@@ -58,15 +58,16 @@ LEDGER = """# fixture ledger
 - [ ] **Second item** — touches `Scripts/Beta` — 3 MD / AI 0.6
 - [ ] **Third item** — depending on the account API — 1 MD / AI 0.2
 - [x] **Settled earlier** — finished before recording began — 2 MD / AI 0.5
+- [x] **Groundwork** — done long ago, deliberately never estimated
 
 ## Blockers
 
 - [ ] **Server contract** — backend owns this — **needs decision**
 """
 
-# 8 boxes, 3 of them closed. `part two` uses `[X]`, so an implementation that only
+# 9 boxes, 4 of them closed. `part two` uses `[X]`, so an implementation that only
 # accepts `[x]` drops it from both halves of that count.
-BOXES = "3/8 boxes"
+BOXES = "4/9 boxes"
 
 WIDTH_PROBE = """
 import sys; sys.path.insert(0, {here!r})
@@ -267,7 +268,7 @@ def main() -> int:
         ([hey, "variance"], "variance: settled-earlier item excluded",
          "no item has been seen closing yet"),
         ([hey, "item", "First item"], "item history", "first seen"),
-        ([hey, "item", "P0"], "item: an ambiguous key lists the matches", "matches 4 items"),
+        ([hey, "item", "P0"], "item: an ambiguous key lists the matches", "matches 5 items"),
         ([hey, "item", "nope"], "item: no match says so", "no item matches"),
         ([hey, "burndown"], "burndown"),
         ([board, "show"], "board: closed"),
@@ -356,6 +357,10 @@ def main() -> int:
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: names the squash leftover as deletable",
           "already merged into origin/main" in out, out)
+    # `Groundwork` is closed and `Server contract` is a blocker; both are meant to carry no
+    # estimate, so neither may be reported as a missing one.
+    check("doctor: no estimate warning for closed items or blockers",
+          "carry no estimate" not in out, out)
     git("checkout", "-q", "main")
 
     # A remote's default branch is not always the branch work merges into. Put `develop`
