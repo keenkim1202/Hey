@@ -148,6 +148,7 @@ English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or
 | `/hey-tune` | adjust estimates with the user, recording why |
 | `/hey-sync` | update the ledger — checks, totals, PR log, next-up order |
 | `/hey-run` | run a scoped loop of items and report a summary |
+| `/next` | brief the single next item and ask whether to start it |
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
 | `/hey-standup` | three lines for a standup, no metrics |
 

@@ -46,8 +46,10 @@ METRIC_LABELS = {
 }
 
 UNITS = {
-    "en": {"lines": " lines"},
-    "ko": {"lines": "줄"},
+    # Every metric carries its own unit, so a bare number never reaches a card. The
+    # leaderboard prints values on rows of their own, with no label to inherit from.
+    "en": {"lines": " lines", "aid": " AI-days", "tok": " tokens"},
+    "ko": {"lines": "줄", "aid": " AI-일", "tok": " 토큰"},
 }
 
 CARD = {
@@ -62,7 +64,6 @@ CARD = {
         "week": "This week", "week_val": "{got} / {goal} AI-days",
         "week_note": "{gap} {pace} pace (Mon-Fri)",
         "results": "Output", "best_on": "best {val} on {date}",
-        "unit_aid": "AI-days",
         "today_next": "Today", "tomorrow_next": "Tomorrow",
         "blocked": "Blocked", "no_record": "no record — no log, no commits",
         "and_more": "and {n} more", "peak_at": "peak",
@@ -84,7 +85,6 @@ CARD = {
         "week": "이번 주", "week_val": "{got} / {goal} AI-일",
         "week_note": "페이스 {gap} {pace} (월-금)",
         "results": "산출", "best_on": "최고 {val} — {date}",
-        "unit_aid": "AI-일",
         "today_next": "오늘 후보", "tomorrow_next": "내일 후보",
         "blocked": "막힌 것", "no_record": "기록 없음. 작업 로그도 커밋도 없다",
         "and_more": "외 {n}건", "peak_at": "최고",

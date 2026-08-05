@@ -141,9 +141,9 @@ _L = S.METRIC_LABELS[LANG]
 _U = S.UNITS[LANG]
 
 METRICS = {
-    "ai": (_L["ai"], lambda r: r.get("earned_ai", 0.0), lambda v: f"{v:.2f}"),
+    "ai": (_L["ai"], lambda r: r.get("earned_ai", 0.0), lambda v: f"{v:.2f}{_U['aid']}"),
     "code": (_L["code"], total_code, lambda v: f"{int(v):,}{_U['lines']}"),
-    "tokens": (_L["tokens"], total_tokens, lambda v: human_tokens(v)),
+    "tokens": (_L["tokens"], total_tokens, lambda v: f"{human_tokens(v)}{_U['tok']}"),
 }
 
 
@@ -230,7 +230,7 @@ def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]
     head = S.card("board_today", LANG, label=label, val=shown_val)
     tail = (S.card("board_rank", LANG, rank=rank, n=len(scored)) if rank
             else S.card("board_window", LANG, n=len(scored)))
-    out = [f"{head:<28}{tail}", ""]
+    out = [f"{pad(head, 28)}{tail}", ""]
     shown = ranked[:top_n]
     if rank and rank > top_n:
         shown = ranked[: top_n - 1] + [(on, today_val)]
@@ -238,8 +238,11 @@ def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]
         pos = next(j + 1 for j, (dd, _) in enumerate(ranked) if dd == d)
         note = (S.card("board_peak", LANG) if pos == 1
                 else (S.card("board_is_today", LANG) if d == on else ""))
-        out.append(f"{pos:2}  {short_date(d)}  {bar(v, peak):<{BAR_W}}  {fmt(v):>8}{note}")
-    out.append(f"{'':4}{pad(S.card('board_avg', LANG), 9)}{bar(avg, peak):<{BAR_W}}  {fmt(avg):>8}")
+        out.append(f"{pos:2}  {short_date(d)}  {bar(v, peak):<{BAR_W}}  {rpad(fmt(v), 12)}{note}")
+    # The avg row has no rank or date, so its label is padded to whatever those occupy on
+    # the rows above. A fixed width drifts the moment the date format changes language.
+    lead = _w(f"{1:2}  {short_date(shown[0][0])}  ") - 4
+    out.append(f"{'':4}{pad(S.card('board_avg', LANG), lead)}{bar(avg, peak):<{BAR_W}}  {rpad(fmt(avg), 12)}")
     if today_val is None:
         return out
     out.append("")
@@ -480,6 +483,12 @@ def pad(s: str, width: int) -> str:
     return s + " " * max(0, width - _w(s))
 
 
+def rpad(s: str, width: int) -> str:
+    """Right-align by display width. `str.rjust` counts characters, so a Korean unit
+    suffix would pull the column out of true."""
+    return " " * max(0, width - _w(s)) + s
+
+
 def meter(done: float, total: float, width: int = 24) -> str:
     if total <= 0:
         return "░" * width
@@ -626,7 +635,7 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             scored = [(r["date"], get(r)) for r in win if get(r)]
             mine = next((v for d_, v in scored if d_ == focus), 0)
             best = max(scored, key=lambda x: x[1]) if scored else None
-            shown = f(mine) + (f' {S.card("unit_aid", LANG)}' if m == "ai" else "")
+            shown = f(mine)
             line = f"{INDENT}{pad(lbl, 9)}{pad(shown, 20)}"
             if best:
                 line += S.card("best_on", LANG, val=f(best[1]), date=short_date(best[0]))

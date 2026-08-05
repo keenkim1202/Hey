@@ -57,12 +57,12 @@ tomorrow I go looking for yesterday's half-finished work all over again.
    This week   0.6 / 5.0 AI-days          2.4 behind pace (Mon-Fri)
 
 📈 Output  08-04 (Tue)
-   closed   0.00 AI-days        best 1.64 on 07-29 (Wed)
+   closed   0.00 AI-days        best 1.64 AI-days on 07-29 (Wed)
    code     38,330 lines        best 38,330 lines on 08-04 (Tue)
-   tokens   1.9M                best 4.2M on 07-30 (Thu)
-    1  07-29 (Wed)  ████████████████████      1.64  peak
-    2  07-30 (Thu)  █████████▊                0.80
-    3  08-03 (Mon)  ███████▎                  0.60
+   tokens   1.9M tokens         best 4.2M tokens on 07-30 (Thu)
+    1  07-29 (Wed)  ████████████████████  1.64 AI-days  peak
+    2  07-30 (Thu)  █████████▊            0.80 AI-days
+    3  08-03 (Mon)  ███████▎              0.60 AI-days
 
 🎯 Today
    1. Heading anchors — two headings with the same title collide on one
@@ -160,7 +160,7 @@ Codex reads the same marketplace file, and Codex's own plugin validator passes:
 codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
 ```
 
-- **Loaded:** the nine skills under `skills/`
+- **Loaded:** the ten skills under `skills/`
 - **Not loaded:** `/hey`, which is a command rather than a skill, and the session-start
   hook — neither is a component a Codex plugin manifest accepts
 - **Script paths** resolve through `$CLAUDE_PLUGIN_ROOT`, falling back to `$PLUGIN_ROOT`,
@@ -178,6 +178,7 @@ an issue.
 |---|---|
 | `/hey-ledger` | register a project, set the scope, create a ledger. The conventions the rest read |
 | `/wassup` | start of day — yesterday, today's load, where to pick up, the board |
+| `/next` | brief the single next item and ask whether to start it |
 | `/seeya` | end of day — log today, record output, preview tomorrow |
 | `/hey <text>` | capture a note now. Date, branch and commit attach automatically |
 | `/hey-plan` | turn a spec into a checklist with MD and AI estimates |
@@ -231,14 +232,15 @@ reports what share of it sits at 1x.
 Ranking compares **against your own past records**. No user data is sent or received.
 
 ```
-Today  code 38,330 lines    #1 of last 5 days
+Today  code 41,204 lines    #1 of last 4 days
 
- 1  08-04 (Tue)  ████████████████████  38,330 lines  peak
- 2  08-03 (Mon)  ██████▋               12,846 lines
- 3  07-31 (Fri)  ████▉                 9,356 lines
-    avg          ██████▌               12,553 lines
+ 1  08-05 (Wed)  ████████████████████  41,204 lines  peak
+ 2  08-04 (Tue)  ██████████████████▌   38,330 lines
+ 3  08-03 (Mon)  ██████▏               12,846 lines
+ 4  07-31 (Fri)  ████▌                  9,356 lines
+    avg          ████████████▎         25,434 lines
 
-New high. Turns out today's output wasn't slop.  (38,330 lines)
+Peak. Competent for exactly one day.  (41,204 lines)
 ```
 
 The very first record is a **baseline** and carries no closed figure. There is no earlier
