@@ -156,18 +156,26 @@ asking it directly — the only probe here that returns a real reading. **Confir
 writing it anywhere.** It is the window's width, not the width of the fenced block you
 paste a card into, and those can differ wherever the UI adds padding of its own.
 
-Every probe you would reach for instead fails, each in its own misleading way:
+**Never ask the user to run `tput cols` and report the number back.** That question looks
+like it delegates the measurement, and it does not: their shell in this session is the same
+shell as yours, so they get the same `80` fallback you would. Acting on it sets an
+80-column card on a 154-column terminal, and every step of getting there looked reasonable.
+Working out that you cannot measure the width is the easy half; not replacing it with a
+question that returns a wrong answer is the half that goes wrong.
+
+Every probe you would reach for fails, each in its own misleading way:
 
 | Probe | What you get |
 |---|---|
 | `tput cols` | `80` — its fallback, whatever the terminal really is |
 | `shutil.get_terminal_size()` | `columns=80` — the same fallback |
+| `os.get_terminal_size()` | `Inappropriate ioctl for device` |
 | `stty size` | fails with `stdin isn't a terminal`, exit 1 |
+| `tty` | `not a tty` |
 | `echo $COLUMNS` | `0` — a number, and a useless one |
 
 `sys.stdout.isatty()` is `False`, and that is the one honest answer in the set: it says
-there is nothing on *this* end to measure. A user running `tput cols` themselves in the
-session hits the same fallback, so their answer is no better than yours.
+there is nothing on *this* end to measure.
 
 Do not set a width off any of those numbers, and note that they mislead in *different*
 directions. A command that errors looks broken, which makes the one answering `80` look
