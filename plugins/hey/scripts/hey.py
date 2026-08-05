@@ -273,6 +273,11 @@ class Ledger:
     KID = re.compile(r"\s+- \[([ xX])\] (.*)")
     EST = re.compile(r"(\d+\.?\d*) MD / AI (\d+\.?\d*)")
     DAY = re.compile(r"^### (\d{4}-\d{2}-\d{2})")
+    # A subitem's share of its item's estimate, for the cases where an even split lies.
+    # Numeric and `AI`-prefixed, so it cannot be confused with a tag like `[migrated]`.
+    KID_AI = re.compile(r"\[AI (\d+\.?\d*)\]")
+    # When a blocker started waiting, so its age does not depend on recorded history.
+    SINCE = re.compile(r"\[since (\d{4}-\d{2}-\d{2})\]")
 
     def __init__(self, project: dict):
         self.project = project
@@ -297,12 +302,15 @@ class Ledger:
                     "text": m[2],
                     "done": m[1].lower() == "x",
                     "kids": [],
+                    "kid_ai": [],
                     "md": float(est[1]) if est else 0.0,
                     "ai": float(est[2]) if est else 0.0,
                 }
                 self.items.append(cur)
             elif (k := self.KID.match(ln)) and cur is not None:
                 cur["kids"].append(k[1].lower() == "x")
+                w = self.KID_AI.search(k[2])
+                cur["kid_ai"].append(float(w[1]) if w else None)
 
     @staticmethod
     def _title(text: str) -> str:
@@ -322,6 +330,42 @@ class Ledger:
         """(closed boxes, total boxes). The item line itself counts as one box."""
         all_boxes = [it["done"], *it["kids"]]
         return sum(all_boxes), len(all_boxes)
+
+    @staticmethod
+    def box_ai(it: dict) -> list:
+        """Each box's share of the item's estimate, in `[done, *kids]` order.
+
+        An even split is the default and is right often enough, but not always: the last
+        subitem of a ten-box module can be the whole remaining job, and scoring it at a
+        tenth understates the day. A subitem may therefore claim a share with `[AI 0.3]`.
+        What is claimed comes off the top; the rest is split evenly among the boxes that
+        claimed nothing, which keeps an unannotated ledger scoring exactly as before.
+
+        Over-claiming does not silently rescale the item -- `doctor` reports it and the
+        remaining boxes simply share nothing, so the numbers stay traceable to the file.
+        """
+        weights = [None, *it["kid_ai"]]
+        claimed = sum(w for w in weights if w is not None)
+        free = [i for i, w in enumerate(weights) if w is None]
+        rest = max(0.0, it["ai"] - claimed)
+        share = rest / len(free) if free else 0.0
+        return [share if w is None else w for w in weights]
+
+    @classmethod
+    def earned(cls, it: dict) -> float:
+        """AI-days already banked on this item, by which boxes are closed.
+
+        Recorded per snapshot so `earned_ai` can diff a value instead of multiplying a
+        count, which is what lets a weighted subitem score what it is worth.
+        """
+        closed = [it["done"], *it["kids"]]
+        return round(sum(w for w, c in zip(cls.box_ai(it), closed) if c), 4)
+
+    @classmethod
+    def overclaimed(cls, it: dict) -> float:
+        """How much the subitem shares exceed the item's own estimate, or 0."""
+        claimed = sum(w for w in it["kid_ai"] if w is not None)
+        return round(max(0.0, claimed - it["ai"]), 4) if it["ai"] else 0.0
 
     # -- aggregation
 
@@ -361,8 +405,15 @@ class Ledger:
             })
         return out
 
-    def blockers(self) -> list[dict]:
-        """Blocked items: unfinished items in a blocker section, or marked blocked in text."""
+    def blockers(self, on: str | None = None) -> list[dict]:
+        """Blocked items: unfinished items in a blocker section, or marked blocked in text.
+
+        A blocker's age is the number that decides whether to chase it, and `carryover`
+        can only derive it once several days are on record. `[since YYYY-MM-DD]` on the
+        line says it outright, so the age survives a machine with no history at all --
+        and a blocker is exactly the kind of thing that predates the ledger.
+        """
+        today = on or date.today().isoformat()
         out = []
         for it in self.items:
             if self.state(it) == S.DONE:
@@ -371,8 +422,17 @@ class Ledger:
             in_section = any(w.lower() in sect for w in S.blocker_sections())
             in_text = S.blocker_hit(it["text"])
             if in_section or in_text:
+                m = self.SINCE.search(it["text"])
+                days = None
+                if m:
+                    try:
+                        days = (date.fromisoformat(today) - date.fromisoformat(m[1])).days
+                    except ValueError:
+                        days = None
                 out.append({"key": self.key(it), "title": it["title"],
-                            "section": it["section"]})
+                            "section": it["section"],
+                            "since": m[1] if m else None,
+                            "days": days if days is None or days >= 0 else None})
         return out
 
     @staticmethod
@@ -431,11 +491,26 @@ def snapshot(led: Ledger, on: str) -> dict:
             {
                 "k": Ledger.key(i), "ai": i["ai"], "state": Ledger.state(i),
                 "closed": Ledger.boxes(i)[0], "boxes": Ledger.boxes(i)[1],
+                "earned": Ledger.earned(i),
             }
             for i in led.items
         ],
         "blockers": [b["key"] for b in led.blockers()],
     }
+
+
+def need_history(name: str, what: str, have: int, need: int) -> None:
+    """Report a history shortfall as a countdown, not as an empty answer.
+
+    Five commands go quiet on a fresh install for the same one reason, and `not enough
+    snapshots` does not say which reason or what clears it -- so it reads as five broken
+    features instead of one clock that has not run yet. The first recorded day is a
+    baseline by design, so even a diligent user sees this on day one.
+    """
+    short = max(0, need - have)
+    print(f"[{name}] {what} needs {need} recorded day(s), and has {have}. "
+          f"{short} more of `/seeya` (or `board.py collect`) opens it. "
+          f"The first day recorded is a baseline, so it does not count toward output")
 
 
 def read_stats() -> list[dict]:
@@ -502,16 +577,26 @@ def record_progress(led: Ledger, on: str) -> dict:
 def earned_ai(prev: dict | None, now: dict) -> float:
     """Convert boxes closed between two snapshots into AI-days.
 
-    An item's estimate is split evenly across its boxes, so closing one subitem of a
-    large item does not score the same as closing a small item outright.
+    Each box carries a share of its item's estimate -- even by default, or whatever a
+    subitem claimed with `[AI n]`. Diffing the banked total is what makes a weighted
+    subitem score what it is worth rather than its fraction of the box count.
+
+    Records written before shares existed have no `earned`, so those fall back to the old
+    count-based split. Rewriting them is not an option: the ledger only holds its current
+    state, so the box weights of a past day are gone.
     """
     before = {i["k"]: i for i in (prev or {}).get("items", [])}
     total = 0.0
     for it in now["items"]:
-        was = before.get(it["k"], {}).get("closed", 0)
-        delta = it["closed"] - was
-        if delta > 0 and it["boxes"]:
-            total += it["ai"] * delta / it["boxes"]
+        was = before.get(it["k"], {})
+        if "earned" in it and "earned" in was:
+            total += max(0.0, it["earned"] - was["earned"])
+        elif "earned" in it and not was:
+            total += it["earned"]          # first sighting of the item
+        else:
+            delta = it["closed"] - was.get("closed", 0)
+            if delta > 0 and it["boxes"]:
+                total += it["ai"] * delta / it["boxes"]
     return round(total, 3)
 
 
@@ -721,6 +806,22 @@ def cmd_doctor(args, cfg):
             if missing:
                 say("warn", f"{len(missing)} unfinished item(s) carry no estimate, so they count "
                             f"toward boxes but not toward effort")
+            # A day written into the log but never recorded is a hole in every trend that
+            # reads the history. Code and tokens are still recoverable -- git and the
+            # transcripts keep them -- so the hole is worth naming while that is true.
+            recorded = {r["date"] for r in read_stats() if r["project"] == p["name"]}
+            gaps = sorted(d for d, _ in ledger.log_days() if d not in recorded)
+            if gaps:
+                shown = ", ".join(gaps[:3]) + (f" and {len(gaps) - 3} more" if len(gaps) > 3 else "")
+                say("warn", f"{len(gaps)} logged day(s) never recorded: {shown}. "
+                            f"`board.py collect --date <day>` recovers code and tokens, "
+                            f"but closed boxes are gone -- the ledger only holds today")
+            over = [i for i in ledger.items if Ledger.overclaimed(i)]
+            if over:
+                worst = max(over, key=Ledger.overclaimed)
+                say("warn", f"{len(over)} item(s) whose `[AI n]` subitem shares exceed the "
+                            f"item's own estimate, worst by {Ledger.overclaimed(worst)} on "
+                            f"`{worst['title']}`. The remaining boxes score nothing")
 
     print("history")
     if not STATS.exists():
@@ -808,7 +909,7 @@ def cmd_rank(args, cfg):
     for p, _ in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"] and "earned_ai" in r]
         if not rows:
-            print(f"[{p['name']}] nothing to compare yet. Let `hey.py snapshot` run for a few days")
+            need_history(p["name"], "ranking today against your past", len(rows), 1)
             continue
         today = next((r for r in rows if r["date"] == on), None)
         past = [r for r in rows if r["date"] != on]
@@ -834,7 +935,7 @@ def cmd_carryover(args, cfg):
     for p, led in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"]]
         if len(rows) < 2:
-            print(f"[{p['name']}] only {len(rows)} snapshot(s) — not enough to judge carry-over")
+            need_history(p["name"], "carry-over", len(rows), 2)
             continue
         streak: dict[str, int] = {}
         for r in rows:
@@ -881,7 +982,7 @@ def cmd_variance(args, cfg):
     for p, _ in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"] and r.get("items")]
         if len(rows) < 2:
-            print(f"[{p['name']}] not enough snapshots")
+            need_history(p["name"], "estimate variance", len(rows), 2)
             continue
         first_open: dict[str, str] = {}
         first_wip: dict[str, str] = {}
@@ -922,7 +1023,7 @@ def cmd_burndown(args, cfg):
     for p, _ in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"]]
         if len(rows) < 2:
-            print(f"[{p['name']}] not enough snapshots")
+            need_history(p["name"], "the burndown trend", len(rows), 2)
             continue
         rows = rows[-args.days:]
         vals = [round(r["wip_ai"] + r["todo_ai"], 2) for r in rows]
@@ -992,6 +1093,28 @@ def cmd_note(args, cfg):
         lines[j:j] = [header, "", bullet, ""]
     path.write_text("\n".join(lines))
     print(f"[{p['name']}] note added -> {path}\n{bullet}")
+
+
+def cmd_blockers(args, cfg):
+    """Every blocked item, oldest wait first.
+
+    The card shows three and counts the rest, and until this existed the rest could not be
+    read anywhere -- `progress` totals phases, `batch` only says how many it excluded, and
+    `carryover` wants a history the first week does not have.
+    """
+    for p, led in _each(args, cfg):
+        rows = led.blockers()
+        if not rows:
+            print(f"[{p['name']}] nothing blocked")
+            continue
+        rows.sort(key=lambda b: -(b["days"] if b["days"] is not None else -1))
+        undated = sum(1 for b in rows if b["days"] is None)
+        print(f"[{p['name']}] {len(rows)} blocked")
+        for b in rows:
+            age = f'{b["days"]}d' if b["days"] is not None else "  ?"
+            print(f"  {age:>5}  {b['title']}")
+        if undated:
+            print(f"  {undated} with no start date. Add `[since YYYY-MM-DD]` to age them")
 
 
 def cmd_notes(args, cfg):
@@ -1279,6 +1402,7 @@ def main() -> None:
     sp.add_argument("text")
     sp.add_argument("--file", action="append", help="related file (repeatable)")
     sp.add_argument("--doc", action="append", help="related doc or link (repeatable)")
+    scoped(add("blockers", cmd_blockers, help="every blocked item, oldest wait first"))
     sp = scoped(add("notes", cmd_notes, help="read notes"))
     sp.add_argument("--since", type=int, default=7, help="how many days back")
     sp = scoped(add("log", cmd_log, help="read the work log"))

@@ -54,7 +54,7 @@ LEDGER = """# fixture ledger
 - [ ] **First item** — touches `Modules/Alpha` — 3 MD / AI 0.4
   - [x] part one
   - [X] part two
-  - [ ] part three
+  - [ ] part three `[AI 0.3]`
 - [ ] **Second item** — touches `Scripts/Beta` — 3 MD / AI 0.6
 - [ ] **Third item** — depending on the account API — 1 MD / AI 0.2
 - [x] **Settled earlier** — finished before recording began — 2 MD / AI 0.5
@@ -62,7 +62,7 @@ LEDGER = """# fixture ledger
 
 ## Blockers
 
-- [ ] **Server contract** — backend owns this — **needs decision**
+- [ ] **Server contract** — backend owns this — **needs decision** `[since 2020-01-01]`
 """
 
 # 9 boxes, 4 of them closed. `part two` uses `[X]`, so an implementation that only
@@ -161,6 +161,57 @@ assert w(78, 80) is None, 'a standard terminal already fits the default'
 assert w(hey.CARD_MIN, 72) is None, 'a terminal narrower than the floor cannot help'
 assert w(78, None) is None, 'no reading means no suggestion'
 assert w(78, 0) is None, 'a zero reading is not a suggestion'
+"""
+
+SHARE_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from datetime import date
+from hey import Ledger, load_config, earned_ai
+
+led = Ledger(load_config()['projects'][0])
+by = {{i['title']: i for i in led.items}}
+
+# `First item` is AI 0.4 over 4 boxes. `part three` claims 0.3, so the other three split
+# the remaining 0.1 -- an even split would have given every box 0.1 and scored the whole
+# item's remainder at a third of what its last subitem is actually worth.
+first = by['First item']
+assert Ledger.boxes(first) == (2, 4), Ledger.boxes(first)
+shares = [round(x, 4) for x in Ledger.box_ai(first)]
+assert shares == [0.0333, 0.0333, 0.0333, 0.3], shares
+assert Ledger.earned(first) == 0.0667, Ledger.earned(first)
+
+# An item with no claims anywhere splits evenly, which is what keeps every ledger written
+# before shares existed scoring exactly as it did.
+second = by['Second item']
+assert Ledger.box_ai(second) == [0.6], Ledger.box_ai(second)
+assert Ledger.earned(second) == 0.0, Ledger.earned(second)
+assert Ledger.overclaimed(second) == 0.0
+
+# Claims beyond the item's own estimate must not turn the leftover share negative -- that
+# would have unclosed boxes subtracting from the day. The boxes that claimed nothing score
+# nothing, `doctor` reports the excess, and the arithmetic stays traceable to the file.
+over = {{'ai': 1.0, 'done': False, 'kids': [False, True], 'kid_ai': [0.6, 0.7]}}
+assert Ledger.box_ai(over) == [0.0, 0.6, 0.7], Ledger.box_ai(over)
+assert Ledger.overclaimed(over) == 0.3, Ledger.overclaimed(over)
+assert Ledger.earned(over) == 0.7, Ledger.earned(over)
+
+# Diffing banked totals is what makes a weighted box score its own worth. Closing only
+# `part three` earns 0.3, where the old count-based split would have called it 0.1.
+def snap(earned):
+    return {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 2, 'boxes': 4,
+                        'earned': earned}}]}}
+assert earned_ai(snap(0.0667), snap(0.3667)) == 0.3, earned_ai(snap(0.0667), snap(0.3667))
+# Records written before shares existed have no `earned`, and must still be readable.
+old = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 1, 'boxes': 4}}]}}
+new = {{'items': [{{'k': 'P0|First item', 'ai': 0.4, 'closed': 2, 'boxes': 4}}]}}
+assert earned_ai(old, new) == 0.1, earned_ai(old, new)
+
+# A blocker's age comes off the line, so it works on a machine with no history at all.
+b = {{x['title']: x for x in led.blockers('2020-01-11')}}['Server contract']
+assert b['since'] == '2020-01-01', b
+assert b['days'] == 10, b
+# A date in the future is not an age. Reporting a negative wait would be worse than none.
+assert {{x['title']: x for x in led.blockers('2019-01-01')}}['Server contract']['days'] is None
 """
 
 BLOCKER_PROBE = """
@@ -325,6 +376,7 @@ def main() -> int:
         "stats": STATS_PROBE.format(yesterday=yesterday, today=today),
         "display width": WIDTH_PROBE.format(here=str(HERE)),
         "card width: env, clamp and fallback": CARD_WIDTH_PROBE.format(here=str(HERE)),
+        "subitem shares and blocker age": SHARE_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
     }
 
@@ -367,6 +419,7 @@ def main() -> int:
         ([board, "streak"], "streak: uses the project's daily goal", "goal of 0.4"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
+        ([hey, "blockers"], "blockers: lists them all", "1 blocked"),
         ([hey, "doctor"], "doctor"),
         ([hey, "scope", "all"], "scope all"),
     ]

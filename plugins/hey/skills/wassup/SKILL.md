@@ -84,6 +84,12 @@ the state most easily lost. Point at the directory and branch; do not switch to 
 Only if there are any. Give the **number of days** something has been stuck, and split
 them into what you can unblock, what someone else must, and what needs a decision.
 
+The age comes from `[since YYYY-MM-DD]` on the line, which the card prints beside the
+title, or from `carryover` once enough days are recorded. **If neither has a number, say
+the wait is undated rather than describing it as recent** — and offer to date it. An
+undated blocker is the one most likely to be the oldest. `hey.py blockers` lists the ones
+the card counted but did not have room to show.
+
 ### One closing line
 
 The board already printed a line with personality. Add at most one sentence of your own,

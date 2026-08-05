@@ -79,11 +79,19 @@ Checklist item convention:
 ```markdown
 - [ ] **Item name** — description — 3 MD / AI 0.4
   - [x] finished subitem (#12)
-  - [ ] remaining subitem
+  - [ ] remaining subitem `[AI 0.3]`
 ```
 
 - **Estimates are read from the top-level item line only**, as `N MD / AI M`. Never put
   them on subitems
+- **A subitem may claim a share of that estimate with `[AI n]`.** Every box otherwise
+  carries an even slice, which is wrong exactly when it matters: the last subitem of a
+  ten-box module is often the whole remaining job, and a tenth of the estimate both
+  under-reports the day and makes `/wassup` split the number by hand. What is claimed comes
+  off the top and the rest is split evenly among the boxes that claimed nothing, so a
+  ledger with no claims scores exactly as it always did. Claim only where the even split
+  lies — annotating everything is the same work as estimating every subitem. `doctor`
+  reports claims that exceed the item's own estimate
 - A box is `[ ]`, `[x]` or `[X]`. Anything else is not a box and is counted nowhere
 - `MD` is a traditional man-day; `AI` is the man-day equivalent when using tooling.
   `AI 1.0` = one 8-hour day
@@ -95,6 +103,11 @@ Checklist item convention:
   `TBD`, `needs decision`, `pending`, or the Korean equivalents). Blocked items drop out
   of `/hey-run` candidates and get aged by `/wassup`. The word has to stand on its own —
   `depending` is not `pending`, and `대기업` is not `대기`
+- **Date a blocker with `[since YYYY-MM-DD]`.** Age is the number that decides whether to
+  go chase it, and `carryover` can only infer it after several days are on record — while a
+  blocker is often older than the ledger. With a date the card shows the wait from day one.
+  `hey.py blockers` lists every one of them, oldest first, which is what the card's
+  `and N more` points at
 
 ## Aggregation
 

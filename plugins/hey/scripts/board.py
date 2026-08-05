@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, card_width, die, fmt_date, load_config, merge_stats,
-    project_base, project_setting, projects_in_scope, read_stats, record_progress,
-    save_config, today_str, worktree_roots, _sh,
+    need_history, project_base, project_setting, projects_in_scope, read_stats,
+    record_progress, save_config, today_str, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -290,7 +290,7 @@ def cmd_streak(args, cfg):
     for p in projects_in_scope(cfg, args.scope, args.project):
         rows = [r for r in read_stats() if r["project"] == p["name"] and "earned_ai" in r]
         if not rows:
-            print(f"[{p['name']}] no records yet")
+            need_history(p["name"], "the streak", len(rows), 1)
             continue
         thr = (args.threshold if args.threshold is not None
                else project_setting(cfg, p, "daily_goal_ai", 0.3))
@@ -657,15 +657,21 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             out += fold(n, INDENT, f"{INDENT}   ", limit=3)
 
     # -- blocked
-    blocked = led.blockers()
+    blocked = led.blockers(on)
     if blocked:
         out += section("blocked", f'{S.card("blocked", LANG)} {len(blocked)}')
         # The title, not the key: `<phase>|<name>` is how the scripts join records to
-        # items, and it has no business in something a person reads.
-        for b in blocked[:3]:
-            out += fold(b["title"], bullet, under, limit=1)
-        if len(blocked) > 3:
-            out.append(f'{bullet}{S.card("and_more", LANG, n=len(blocked) - 3)}')
+        # items, and it has no business in something a person reads. Oldest first, because
+        # age is what decides which one to go chase; the undated ones sort last rather
+        # than pretending to be new.
+        ranked = sorted(blocked, key=lambda b: -(b["days"] if b["days"] is not None else -1))
+        for b in ranked[:3]:
+            age = f'  {S.card("waiting_days", LANG, n=b["days"])}' if b["days"] is not None else ""
+            out += fold(b["title"] + age, bullet, under, limit=1)
+        if len(ranked) > 3:
+            # Name what shows the rest. A count with no next step is a dead end on a card
+            # the reader cannot scroll or expand.
+            out.append(f'{bullet}{S.card("and_more", LANG, n=len(ranked) - 3)}')
 
     return out
 

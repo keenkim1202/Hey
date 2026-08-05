@@ -269,7 +269,9 @@ flattering number.
   that never left your machine goes unnoticed
 - **Item names are keys.** Past snapshots link through `<phase>|<item name>`, so renaming an
   item severs carry-over and variance tracking
-- **Estimates go on the top-level item line only**, as `N MD / AI M`. Never on subitems
+- **Estimates go on the top-level item line only**, as `N MD / AI M`. A subitem never
+  carries an estimate of its own, but it can claim a share of its item's with `[AI n]`,
+  for the cases where splitting the estimate evenly across the boxes would lie
 - A box is `[ ]`, `[x]` or `[X]`. Anything else is not a box and is counted nowhere
 - Several projects can run at once. `scope current` is the one you are standing in,
   `scope all` is every registered project
