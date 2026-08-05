@@ -352,6 +352,14 @@ class Ledger:
         self.path = Path(project["ledger"])
         self.text = self.path.read_text() if self.path.exists() else ""
         self.lines = self.text.split("\n")
+        # An append-only half -- work log, notes, PR log -- grows forever while the
+        # checklist is the part edited daily, so a long-running project ends up wanting
+        # them in separate files. `ledger_log` names the second one; sections are then
+        # looked for across both, and a project without it behaves exactly as before.
+        log = project.get("ledger_log")
+        log_path = Path(log) if log else None
+        self.log_path = log_path if log_path and log_path.exists() else None
+        self.log_lines = self.log_path.read_text().split("\n") if self.log_path else []
         self.items: list[dict] = []
         self._parse()
 
@@ -574,18 +582,25 @@ class Ledger:
     # -- section bodies
 
     def section_body(self, key: str, level: str = "## ") -> list[str]:
-        """Body lines of a section, found by any of its language aliases."""
-        names = S.section_aliases(key)
-        out, inside = [], False
-        for ln in self.lines:
-            if ln.startswith(level):
+        """Body lines of a section, found by any of its language aliases.
+
+        Searched in the primary ledger first, then in `ledger_log` when one is configured.
+        Checkboxes are only ever read from the primary file, so a split cannot double-count
+        progress -- only the prose sections move.
+        """
+        for lines in (self.lines, self.log_lines):
+            out, inside = [], False
+            for ln in lines:
+                if ln.startswith(level):
+                    if inside:
+                        break
+                    inside = ln[len(level):].strip().startswith(S.section_aliases(key))
+                    continue
                 if inside:
-                    break
-                inside = ln[len(level):].strip().startswith(names)
-                continue
-            if inside:
-                out.append(ln)
-        return out
+                    out.append(ln)
+            if out:
+                return out
+        return []
 
     def log_days(self) -> list[tuple[str, list[str]]]:
         """(date, bullets) pairs from the work log, in file order."""
@@ -599,11 +614,17 @@ class Ledger:
                 cur[1].append(ln.strip()[2:])
         return days
 
-    def has_section(self, key: str, level: str = "## ") -> bool:
-        """Is the heading present at all? A section can exist and still be empty."""
+    def _own_section(self, key: str, level: str = "## ") -> bool:
+        """Is the heading in the primary ledger, as opposed to the companion file?"""
         names = S.section_aliases(key)
         return any(ln.startswith(level) and ln[len(level):].strip().startswith(names)
                    for ln in self.lines)
+
+    def has_section(self, key: str, level: str = "## ") -> bool:
+        """Is the heading present at all, in either half? A section can exist and be empty."""
+        names = S.section_aliases(key)
+        return any(ln.startswith(level) and ln[len(level):].strip().startswith(names)
+                   for ln in (*self.lines, *self.log_lines))
 
     def next_up(self) -> list[str]:
         body = self.section_body("next", level="### ")
@@ -791,6 +812,8 @@ def cmd_add(args, cfg):
         created = True
 
     entry = {"name": name, "root": str(root), "ledger": str(ledger)}
+    if args.ledger_log:
+        entry["ledger_log"] = str(Path(args.ledger_log).expanduser().resolve())
     if base:
         entry["base"] = base
     cfg["projects"] = [p for p in cfg["projects"] if p["name"] != name]
@@ -805,6 +828,9 @@ def cmd_add(args, cfg):
     else:
         note = "  [missing - re-run with --init]"
     print(f"registered: {name}\n  root:   {root}\n  ledger: {ledger}{note}")
+    if entry.get("ledger_log"):
+        exists = "" if Path(entry["ledger_log"]).exists() else "  [missing]"
+        print(f"  log:    {entry['ledger_log']}{exists}")
     if base:
         print(f"  base:   origin/{base}"
               f"{'' if args.base else '  (detected)'}")
@@ -938,6 +964,12 @@ def cmd_doctor(args, cfg):
         else:
             g = ledger.progress()
             ok(f"{len(ledger.items)} item(s), {g['cb_total']} box(es), AI {g['total_ai']}")
+            if p.get("ledger_log"):
+                if ledger.log_path:
+                    ok(f"companion log {ledger.log_path}")
+                else:
+                    say("warn", f"ledger_log points at {p['ledger_log']}, which does not "
+                                f"exist. The log, notes and PR sections read as empty")
             # An estimate only matters for work still ahead. A finished item's estimate is
             # moot, and a blocker is somebody else's effort — a ledger that deliberately
             # leaves both blank is right to, so warning about them is noise.
@@ -1213,7 +1245,11 @@ def cmd_note(args, cfg):
     if not projs:
         die("not inside a registered project. Pass `--project <name>`")
     p = projs[0]
-    path = Path(p["ledger"])
+    # The note goes wherever the notes heading actually lives. With the halves split, the
+    # primary ledger has no such heading, and inserting there would put the note in a file
+    # nothing reads it from.
+    led = Ledger(p)
+    path = led.log_path if (led.log_path and not led._own_section("notes")) else Path(p["ledger"])
     if not path.exists():
         die(f"ledger not found: {path}")
 
@@ -1551,6 +1587,8 @@ def main() -> None:
     sp = add("add", cmd_add, help="register a project")
     sp.add_argument("root")
     sp.add_argument("--ledger", help="ledger path (default: <root>/TASKS.local.md)")
+    sp.add_argument("--ledger-log", dest="ledger_log",
+                    help="second file holding the append-only sections (log, notes, PR log)")
     sp.add_argument("--name")
     sp.add_argument("--base", help="branch to measure unpushed commits against "
                                   "(default: the remote's own default branch)")

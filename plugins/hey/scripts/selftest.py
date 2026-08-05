@@ -280,6 +280,41 @@ assert far.count('x') > 20, far
 assert clip_to('short', 40) == 'short'
 """
 
+SPLIT_PROBE = """
+import os, sys; sys.path.insert(0, {here!r})
+from pathlib import Path
+from hey import Ledger
+
+NL = chr(10)
+tmp = Path(os.environ['HEY_HOME']) / 'split'
+tmp.mkdir(exist_ok=True)
+main, comp = tmp / 'TASKS.local.md', tmp / 'TASKS.log.local.md'
+# The checklist half keeps the boxes; the append-only half keeps the prose.
+main.write_text(NL.join(['## P0. Phase (1 MD / AI 0.5)', '',
+                         '- [ ] **Only item** -- 1 MD / AI 0.5', '']))
+comp.write_text(NL.join(['## Work log', '', '### 2026-08-05 (Wed)', '', '- did a thing', '',
+                         '## Notes', '', '- a note', '']))
+
+led = Ledger({{'name': 'x', 'ledger': str(main), 'ledger_log': str(comp)}})
+# Boxes come from the primary file only, so a split cannot double-count progress.
+assert len(led.items) == 1, led.items
+assert Ledger.boxes(led.items[0]) == (0, 1), Ledger.boxes(led.items[0])
+# Prose sections are found in the companion.
+assert led.has_section('log'), 'work log not found across the halves'
+assert [d for d, _ in led.log_days()] == ['2026-08-05'], led.log_days()
+assert any('a note' in x for x in led.section_body('notes')), led.section_body('notes')
+
+# Without the second path nothing changes, which is what keeps every existing ledger safe.
+plain = Ledger({{'name': 'x', 'ledger': str(main)}})
+assert not plain.has_section('log')
+assert plain.log_days() == []
+assert len(plain.items) == 1
+
+# A configured path that is not there reads as empty rather than raising.
+gone = Ledger({{'name': 'x', 'ledger': str(main), 'ledger_log': str(tmp / 'nope.md')}})
+assert gone.log_path is None and gone.log_days() == []
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -300,6 +335,17 @@ first, second = by_date[{yesterday!r}], by_date[{today!r}]
 assert first.get('baseline') is True, first
 assert 'earned_ai' not in first, first
 assert 'earned_ai' in second, second
+# A day that earned something is not the baseline. `merge_stats` keeps whatever the row
+# already held, so the flag has to be actively cleared or the row claims to be both.
+assert 'baseline' not in second, second
+
+# The flag is cleared at the source too, which is what protects a history written before
+# that was enforced: a row already marked baseline must lose the mark once it earns.
+import sys as _s; _s.path.insert(0, {here!r})
+from hey import Ledger, load_config, record_progress, today_str
+snap = record_progress(Ledger(load_config()['projects'][0]), today_str())
+assert 'earned_ai' in snap, sorted(snap)
+assert snap.get('baseline', 'MISSING') is None, snap.get('baseline', 'MISSING')
 # `snapshot` ran after `collect` on the same day; neither may erase the other's fields.
 for key in ('code', 'tokens', 'items'):
     assert key in second, (key, sorted(second))
@@ -440,10 +486,11 @@ def main() -> int:
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     two_days_ago = (date.today() - timedelta(days=2)).isoformat()
     probes = {
-        "stats": STATS_PROBE.format(yesterday=yesterday, today=today),
+        "stats": STATS_PROBE.format(yesterday=yesterday, today=today, here=str(HERE)),
         "display width": WIDTH_PROBE.format(here=str(HERE)),
         "card width: env, clamp and fallback": CARD_WIDTH_PROBE.format(here=str(HERE)),
         "subitem shares and blocker age": SHARE_PROBE.format(here=str(HERE)),
+        "split ledger: prose in a second file": SPLIT_PROBE.format(here=str(HERE)),
         "titles and clipping": TITLE_CLIP_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
     }

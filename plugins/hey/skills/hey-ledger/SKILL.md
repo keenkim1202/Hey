@@ -32,6 +32,7 @@ python3 "$HEY" projects                    # registered projects, and which one 
 python3 "$HEY" add <project root>          # register. Ledger defaults to <root>/TASKS.local.md
 python3 "$HEY" add <root> --init           # register and create the ledger from the template
 python3 "$HEY" add <root> --ledger <path>  # when the ledger lives elsewhere
+python3 "$HEY" add <root> --ledger-log <path>  # prose sections in a second file
 python3 "$HEY" add <root> --base <branch>  # when the remote's default branch is not it
 python3 "$HEY" remove <name>               # unregister. Ledger and history are kept
 python3 "$HEY" scope current|all           # default scope
@@ -66,7 +67,8 @@ one silently.** Ask, and if the ledger is missing, ask before copying
 `templates/LEDGER.md` is the reference. Five sections are found by name, and **each name
 is matched against every language alias**, so Korean and English ledgers both work:
 
-| Section (aliases) | Written by |
+python3 "$HEY" add <root> --ledger <path>  # when the ledger lives elsewhere
+python3 "$HEY" add <root> --ledger-log <path>  # prose sections in a second file
 |---|---|
 | `## Notes` / `## 메모` | `/hey` inserts under today's date |
 | `## PR log` / `## PR 기록` | `/hey-sync` appends rows |

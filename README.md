@@ -336,6 +336,11 @@ true width to leave room for the margin the transcript adds.
 <project>/TASKS.local.md    the ledger
 ```
 
+**The ledger may be two files.** The work log, notes and PR log only ever grow, so
+`hey.py add <root> --ledger-log <path>` puts them in a companion file while the checklist
+stays in the first. Sections are found across both; checkboxes are read from the primary
+file only. One file remains the default and needs no configuration.
+
 Nothing else, and nothing leaves the machine. A project's `base` is filled in when you
 register it; to change it, edit `config.json` or re-register with `--base <branch>`.
 
