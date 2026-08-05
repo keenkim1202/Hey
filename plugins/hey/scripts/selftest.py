@@ -227,6 +227,39 @@ assert b['days'] == 10, b
 assert {{x['title']: x for x in led.blockers('2019-01-01')}}['Server contract']['days'] is None
 """
 
+TITLE_CLIP_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from hey import Ledger, clip_to, display_width as dw
+
+t = Ledger._title
+# A trailing parenthetical is a list of what the item covers, and dropping it is what turns
+# a line into a name.
+assert t('**Scaffold** (Alpha, Beta, Gamma)') == 'Scaffold'
+assert t('**Scaffold** — notes (Alpha)') == 'Scaffold'
+# But when the bracket opens early in a sentence that carries on, cutting there keeps a
+# fragment and throws the sentence away. Two-to-one is the line: past it the head is not a
+# title, it is the first couple of words of one.
+long_tail = 'media-bff (the third backend) exists or not, and whether OpenAPI exposes it'
+assert t(long_tail) == long_tail, t(long_tail)
+# Just under the ratio still cuts, so the rule does not quietly swallow the common case.
+assert t('Scaffolding here (x) short') == 'Scaffolding here', t('Scaffolding here (x) short')
+
+# Clipping ends on a word when one is close, and never returns more than it was given.
+cut = clip_to('alpha bravo charlie delta', 18)
+assert dw(cut) <= 18, (dw(cut), cut)
+assert cut == 'alpha bravo…', cut
+# A single unbroken token has no space to back off to, so it keeps the hard cut rather
+# than collapsing to nothing.
+hard = clip_to('x' * 40, 12)
+assert dw(hard) <= 12 and hard.startswith('xxx'), hard
+# A space too far back to be worth reaching for is left alone: backing off to it would
+# throw away most of the line to gain a word boundary.
+far = clip_to('ab ' + 'x' * 40, 30)
+assert far.count('x') > 20, far
+# Text that fits is returned untouched, ellipsis included.
+assert clip_to('short', 40) == 'short'
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -390,6 +423,7 @@ def main() -> int:
         "display width": WIDTH_PROBE.format(here=str(HERE)),
         "card width: env, clamp and fallback": CARD_WIDTH_PROBE.format(here=str(HERE)),
         "subitem shares and blocker age": SHARE_PROBE.format(here=str(HERE)),
+        "titles and clipping": TITLE_CLIP_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
     }
 

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, card_width, die, fmt_date, load_config, merge_stats,
-    need_history, project_base, project_setting, projects_in_scope, read_stats,
+    clip_to, need_history, project_base, project_setting, projects_in_scope, read_stats,
     record_progress, save_config, today_str, unpushed, worktree_roots, _sh,
 )
 
@@ -401,14 +401,7 @@ def clip(s: str, width: int = WIDTH) -> str:
 
 def _cut(s: str, width: int) -> str:
     """The longest prefix of `s` that fits, with an ellipsis when something was dropped."""
-    if _w(s) <= width:
-        return s
-    out = ""
-    for c in s:
-        if _w(out) + _w(c) > width - 1:
-            break
-        out += c
-    return out + "…"
+    return clip_to(s, width)
 
 
 def _pieces(text: str) -> list:

@@ -104,6 +104,10 @@ Checklist item convention:
   none is `todo`
 - An item's key is `<phase>|<item name>`. **Renaming it breaks the link to past
   snapshots**, which is what carry-over and variance tracking rely on
+  - The name stops at the first ` — ` or ` - `, and a trailing `(...)` is dropped: that
+    bracket is nearly always a list of what the item covers, and dropping it is what turns
+    a line into a name. The exception is a bracket that opens early in a sentence carrying
+    on afterwards — there the tail is kept, because cutting would leave a fragment
 - To mark something blocked, put a waiting word in the item text (`waiting`, `blocked`,
   `TBD`, `needs decision`, `pending`, or the Korean equivalents). Blocked items drop out
   of `/hey-run` candidates and get aged by `/wassup`. The word has to stand on its own —

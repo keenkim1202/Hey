@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -135,6 +136,40 @@ def git_root(cwd: Path) -> Path | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     return Path(common).parent if common.endswith("/.git") else Path(common)
+
+
+def display_width(s: str) -> int:
+    """Width in terminal columns.
+
+    Only East Asian wide and fullwidth glyphs take two columns. Treating every non-ASCII
+    character as wide mismeasures the card's own furniture -- box drawing, block meters,
+    the ellipsis -- and both the rules and the clipping come out short.
+
+    Lives here rather than in `board` because the ledger parser needs it too, and one
+    implementation is the only way the two agree.
+    """
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+
+
+def clip_to(s: str, width: int, slack: int = 14) -> str:
+    """The longest prefix that fits, ending on a word where one is near, plus an ellipsis.
+
+    Cutting purely on width lands mid-word -- `...건너뛴 항` for `항목` -- which reads as a
+    typo rather than as a sentence that was too long. Backing up to the last space costs a
+    few columns and never a line, so it is only skipped when the nearest space is further
+    back than `slack`: a long unbroken token would otherwise lose most of itself.
+    """
+    if display_width(s) <= width:
+        return s
+    out = ""
+    for c in s:
+        if display_width(out) + display_width(c) > width - 1:
+            break
+        out += c
+    i = out.rfind(" ")
+    if i != -1 and display_width(out) - display_width(out[:i]) <= slack:
+        out = out[:i]
+    return out.rstrip() + "…"
 
 
 def _lines_of(out: str) -> list:
@@ -345,8 +380,24 @@ class Ledger:
 
     @staticmethod
     def _title(text: str) -> str:
-        head = re.split(r" — | - |\(", text, maxsplit=1)[0]
-        return head.replace("**", "").replace("`", "").strip()
+        """The item's name, which is also half its key -- so this has to stay stable.
+
+        A trailing parenthetical is almost always a list of what the item covers, and
+        dropping it is what turns a line into a name. But when the parenthesis opens early
+        in a sentence that carries on afterwards, cutting there keeps a fragment and throws
+        the sentence away. So the cut is skipped when what follows the closing bracket is
+        more than twice what precedes the opening one: at that ratio the head is not the
+        title, it is the first few words of one.
+        """
+        seg = re.split(r" — | - ", text, maxsplit=1)[0]
+        i = seg.find("(")
+        if i != -1:
+            j = seg.find(")", i)
+            tail = seg[j + 1:].strip() if j != -1 else ""
+            clean = lambda x: x.replace("**", "").replace("`", "").strip()  # noqa: E731
+            if display_width(clean(tail)) <= 2 * display_width(clean(seg[:i])):
+                seg = seg[:i]
+        return seg.replace("**", "").replace("`", "").strip()
 
     # -- state
 
@@ -478,7 +529,12 @@ class Ledger:
                         days = (date.fromisoformat(today) - date.fromisoformat(m[1])).days
                     except ValueError:
                         days = None
+                # The title is a key first, and a key that reads well is a coincidence.
+                # The listing wants the line as written, minus the markup and the markers.
+                shown = self.SINCE.sub("", self.BRANCH.sub("", it["text"]))
+                shown = shown.replace("**", "").replace("`", "")
                 out.append({"key": self.key(it), "title": it["title"],
+                            "shown": " ".join(shown.split()),
                             "section": it["section"],
                             "since": m[1] if m else None,
                             "days": days if days is None or days >= 0 else None})
@@ -1197,7 +1253,7 @@ def cmd_blockers(args, cfg):
         print(f"[{p['name']}] {len(rows)} blocked")
         for b in rows:
             age = f'{b["days"]}d' if b["days"] is not None else "  ?"
-            print(f"  {age:>5}  {b['title']}")
+            print(f"  {age:>5}  {clip_to(b['shown'], card_width()[0] - 9)}")
         if undated:
             print(f"  {undated} with no start date. Add `[since YYYY-MM-DD]` to age them")
 
