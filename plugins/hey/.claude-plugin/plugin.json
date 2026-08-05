@@ -9,8 +9,5 @@
   "license": "MIT",
   "homepage": "https://github.com/keenkim1202/Hey",
   "repository": "https://github.com/keenkim1202/Hey",
-  "keywords": ["productivity", "ledger", "estimation", "standup", "progress"],
-  "skills": [
-    "./"
-  ]
+  "keywords": ["productivity", "ledger", "estimation", "standup", "progress"]
 }

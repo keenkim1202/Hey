@@ -1012,6 +1012,63 @@ def cmd_pr_sync(args, cfg):
                   f"{args.limit} merged PRs")
 
 
+def cmd_item(args, cfg):
+    """One item's history across every record: when it opened, how long it has been open.
+
+    `carryover` says what is stuck and `variance` says by how much estimates were off.
+    Neither answers "what happened to this one", which is the question actually asked when
+    an item has been sitting open for a fortnight.
+    """
+    for p, led in _each(args, cfg):
+        keys = {led.key(i): i for i in led.items}
+        needle = args.key.lower()
+        hits = [k for k in keys if needle in k.lower()]
+        if not hits:
+            print(f"[{p['name']}] no item matches {args.key!r}. `hey.py progress --phases` "
+                  f"lists the phases")
+            continue
+        if len(hits) > 1 and args.key not in hits:
+            print(f"[{p['name']}] {args.key!r} matches {len(hits)} items:")
+            for k in sorted(hits)[:10]:
+                print(f"  - {k}")
+            continue
+        key = args.key if args.key in hits else hits[0]
+        item = keys[key]
+        rows = [r for r in read_stats() if r["project"] == p["name"] and r.get("items")]
+
+        print(f"[{p['name']}] {key}")
+        print(f"  now       {led.state(item)}, {led.boxes(item)[0]}/{led.boxes(item)[1]} "
+              f"boxes, AI {item['ai']}")
+        if S.blocker_hit(item["text"]):
+            print("  blocked   the item text marks itself as waiting")
+
+        seen = [(r["date"], i) for r in rows for i in r["items"] if i["k"] == key]
+        if not seen:
+            print("  history   no record covers this item yet")
+            continue
+        print(f"  history   {len(seen)} record(s), {seen[0][0]} to {seen[-1][0]}")
+        prev = None
+        for on, snap in seen:
+            marks = []
+            if prev is None:
+                marks.append(f"first seen {snap['state']}")
+            else:
+                if snap["state"] != prev["state"]:
+                    marks.append(f"{prev['state']} -> {snap['state']}")
+                if snap["closed"] != prev["closed"]:
+                    marks.append(f"boxes {prev['closed']} -> {snap['closed']}")
+                if snap["ai"] != prev["ai"]:
+                    marks.append(f"estimate AI {prev['ai']} -> {snap['ai']}")
+            if marks:
+                print(f"    {fmt_date(on)}  {' · '.join(marks)}")
+            prev = snap
+        # Open days are counted in records, not calendar days: a day nothing was recorded
+        # on is not evidence that the item sat still.
+        open_records = sum(1 for _, s in seen if s["state"] != S.DONE)
+        if open_records:
+            print(f"  open in   {open_records} of {len(seen)} record(s)")
+
+
 def cmd_context(args, cfg):
     """Where and what you touched yesterday (or a given day). For rebuilding context."""
     on = args.date or (date.today() - timedelta(days=1)).isoformat()
@@ -1100,6 +1157,8 @@ def main() -> None:
     sp.add_argument("--limit", type=int, default=6)
     sp = scoped(add("pr-sync", cmd_pr_sync, help="collect `closes` markers from merged PRs"))
     sp.add_argument("--limit", type=int, default=10)
+    sp = scoped(add("item", cmd_item, help="one item's history across the records"))
+    sp.add_argument("key", help="`<phase>|<name>`, or any part of it")
     sp = scoped(add("context", cmd_context, help="worktrees, branches and files touched on a date"))
     sp.add_argument("--date")
     sp.add_argument("--files", type=int, default=6)

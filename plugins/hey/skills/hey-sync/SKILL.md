@@ -6,8 +6,9 @@ description: Bring the ledger up to date — check boxes, recount progress, appe
 # Updating the ledger
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
+BOARD="$ROOT/scripts/board.py"
 ```
 
 **Never rewrite the whole file.** Edit only the lines that changed. Estimates, unfinished

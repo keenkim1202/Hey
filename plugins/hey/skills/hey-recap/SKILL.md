@@ -9,8 +9,9 @@ Read-only. **Never edit the ledger.** What to change based on the recap is the u
 `/hey-tune` or `/hey-sync` apply it.
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
+BOARD="$ROOT/scripts/board.py"
 ```
 
 ## 1. Gather the numbers

@@ -10,7 +10,8 @@ anything. The output is **a checklist shaped for the ledger, with estimates and 
 reasoning behind them.**
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
 ```
 
 ## 1. Read it, then find what is undecided
@@ -106,8 +107,10 @@ per section:
 
 ## 6. Put it in the ledger
 
-If there is no ledger, copy `templates/LEDGER.md`. **Confirm with the user first.** If one
-exists, add items to the right section and let `/hey-sync` recompute the summary.
+If there is no ledger, create one with `python3 "$HEY" add <project root> --init` rather
+than copying the template by hand — it refuses a linked worktree and puts the file at the
+registered path. **Confirm with the user first.** If one exists, add items to the right
+section and let `/hey-sync` recompute the summary.
 
 Then report:
 

@@ -11,8 +11,9 @@ server. Scripts do all the counting; skills never count by hand.
 ## Paths
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
+BOARD="$ROOT/scripts/board.py"
 ```
 
 Config and history live in `~/.hey/`.
@@ -112,6 +113,14 @@ number across all of them.
 Prefer `brief` and `wrap` over firing the individual commands. They exist because ten
 separate calls cost ten round trips and ten blocks of output in the context window.
 
+```bash
+python3 "$HEY" item "<phase>|<name>"   # one item's history: when it opened, what changed
+```
+
+`item` accepts any part of a key. Reach for it when the question is "what happened to this
+one" — `carryover` says what is stuck and `variance` says how far off the estimates were,
+neither answers that.
+
 **Closed work is not backfillable.** The ledger only holds its current state, so daily
 output only exists from the day `collect` starts running. Passing a past `--date` still
 gives exact code and token numbers from git and the transcripts, but **closed work prints
@@ -140,6 +149,7 @@ English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or
 | `/hey-sync` | update the ledger — checks, totals, PR log, next-up order |
 | `/hey-run` | run a scoped loop of items and report a summary |
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
+| `/hey-standup` | three lines for a standup, no metrics |
 
 ## Never
 

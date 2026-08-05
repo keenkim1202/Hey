@@ -8,8 +8,9 @@ description: Start-of-day briefing — what happened yesterday, today's load, wh
 Read-only. **Never edit the ledger.** `/seeya` and `/hey-sync` do the writing.
 
 ```bash
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+BOARD="$ROOT/scripts/board.py"
+HEY="$ROOT/scripts/hey.py"
 ```
 
 ## 1. One call for the card

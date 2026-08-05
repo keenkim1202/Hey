@@ -120,6 +120,23 @@ To develop against a local checkout, register the path instead:
 claude plugin marketplace add /path/to/hey && claude plugin install hey@hey
 ```
 
+### Codex
+
+Codex reads the same marketplace file, and Codex's own plugin validator passes:
+
+```bash
+codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
+```
+
+Codex loads the eight skills under `skills/`. It does not load `/hey` — that is a command
+rather than a skill — and it does not load the session-start hook, because neither is a
+component a Codex plugin manifest accepts. Skills resolve their scripts through
+`$CLAUDE_PLUGIN_ROOT`, falling back to `$PLUGIN_ROOT`, which is the name Codex uses.
+
+**Installation is verified; running the skills inside a live Codex session is not yet.**
+If a skill reports that it cannot find its script, that is the variable, and it is worth
+an issue.
+
 ---
 
 ## Commands
@@ -135,6 +152,7 @@ claude plugin marketplace add /path/to/hey && claude plugin install hey@hey
 | `/hey-sync` | update the ledger — checks, totals, PR log, next-up order |
 | `/hey-run` | run a scoped loop of items and report a summary; recommends parallel work |
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
+| `/hey-standup` | three lines for a standup. No metrics, no percentages |
 
 One session-start hook. It speaks **only when work is sitting uncommitted with no PR** —
 the state that is easiest to lose. Otherwise it says nothing at all.
@@ -268,17 +286,24 @@ python3 plugins/hey/scripts/hey.py doctor
 
 ```
 plugins/hey/
-├── SKILL.md              ledger conventions; the other skills read this
-├── skills/               one directory per skill
+├── .claude-plugin/       manifest for Claude Code
+├── .codex-plugin/        manifest for Codex
+├── skills/
+│   ├── hey-ledger/       ledger conventions; the other skills read this
+│   └── .../              one directory per skill
 ├── commands/hey.md       /hey, the note capture command
 ├── scripts/
 │   ├── hey.py            ledger parsing, aggregation, recording
 │   ├── board.py          daily output, leaderboards, the two cards
 │   ├── strings.py        every user-facing string, per language
-│   └── selftest.py       every command against a throwaway fixture
+│   └── selftest.py       static checks, then every command against a fixture
 ├── hooks/                the session-start hook
 └── templates/            LEDGER.md, LEDGER.ko.md
 ```
+
+The two manifests differ on purpose. Claude Code's carries no `version`, so every commit
+reaches users; Codex requires strict semver, so `.codex-plugin/plugin.json` pins one and
+has to be bumped for Codex users to see an update.
 
 The self-test starts with static checks — manifests parse, every skill declares a name and
 a description, no two components claim the same name — then builds a fixture project with

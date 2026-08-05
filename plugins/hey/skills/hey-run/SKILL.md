@@ -9,7 +9,8 @@ Runs checklist items back to back. Real code changes, so **never start without a
 scope.**
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
 ```
 
 ## 1. Gather candidates and evidence

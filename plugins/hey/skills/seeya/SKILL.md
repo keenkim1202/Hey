@@ -8,8 +8,9 @@ description: End-of-day wrap-up — log today into the ledger, record output (cl
 The other half of `/wassup`. **Write** today down, **record** the output, preview tomorrow.
 
 ```bash
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+BOARD="$ROOT/scripts/board.py"
+HEY="$ROOT/scripts/hey.py"
 ```
 
 ## 1. One call for the card

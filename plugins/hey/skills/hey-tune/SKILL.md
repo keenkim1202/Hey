@@ -9,8 +9,9 @@ description: Adjust ledger estimates together with the user. Use on "this is 5 d
 to the ledger, and records why it changed.
 
 ```bash
-HEY="${CLAUDE_PLUGIN_ROOT}/scripts/hey.py"
-BOARD="${CLAUDE_PLUGIN_ROOT}/scripts/board.py"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
+HEY="$ROOT/scripts/hey.py"
+BOARD="$ROOT/scripts/board.py"
 ```
 
 ## 1. Show the measurements first

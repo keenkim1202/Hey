@@ -22,6 +22,22 @@ claude plugin marketplace add /path/to/hey
 claude plugin install hey@hey
 ```
 
+### Codex
+
+Codex 도 같은 마켓플레이스 파일을 읽고, Codex 자체 플러그인 검증기를 통과한다.
+
+```bash
+codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
+```
+
+Codex 는 `skills/` 의 스킬 8개를 로드한다. `/hey` 는 스킬이 아니라 커맨드라서, 세션 시작 훅은
+Codex 플러그인 매니페스트가 받는 컴포넌트가 아니라서 각각 로드되지 않는다. 스킬은
+`$CLAUDE_PLUGIN_ROOT` 로 스크립트를 찾고, 없으면 Codex 가 쓰는 이름인 `$PLUGIN_ROOT` 로
+넘어간다.
+
+**설치는 검증했고, 실제 Codex 세션에서 스킬을 돌려본 것은 아니다.** 스킬이 스크립트를 못
+찾는다고 하면 그 변수 문제이니 이슈로 남겨주면 좋다.
+
 ## 시작하기
 
 ```
@@ -46,6 +62,7 @@ claude plugin install hey@hey
 | `/hey-sync` | 원장 갱신 — 체크, 집계, PR 기록, 다음 착수 순서 |
 | `/hey-run` | 범위를 정해 루프로 처리하고 요약 보고. 병렬 가능 항목도 추천 |
 | `/hey-recap` | 주간 회고 — 번다운, 이월, 산정 편차 |
+| `/hey-standup` | 스탠드업 3줄. 지표도 퍼센트도 넣지 않는다 |
 
 세션 시작 훅이 하나 있다. **커밋도 PR 도 없이 떠 있는 작업이 있을 때만** 말한다.
 

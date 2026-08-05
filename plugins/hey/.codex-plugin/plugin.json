@@ -1,0 +1,29 @@
+{
+  "name": "hey",
+  "version": "0.1.0",
+  "description": "Run your work off one markdown ledger: checklist, MD/AI estimates, a morning briefing and an end-of-day record. Start with wassup, end with seeya.",
+  "author": {
+    "name": "keen",
+    "url": "https://github.com/keenkim1202"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/keenkim1202/Hey",
+  "repository": "https://github.com/keenkim1202/Hey",
+  "keywords": ["productivity", "ledger", "estimation", "standup", "progress"],
+  "interface": {
+    "displayName": "hey",
+    "shortDescription": "Run your work off one markdown ledger.",
+    "longDescription": "One markdown file in your project holds the checklist, the estimates, the work log and the notes. Scripts do every calculation - box counts, effort totals, daily output, burndown, estimate variance - so no number is ever written by eye. Start the day with wassup for yesterday's context and today's load, end it with seeya to log what happened. Nothing leaves the machine.",
+    "developerName": "keen",
+    "category": "Productivity",
+    "capabilities": [
+      "Turns a spec into a checklist with man-day and AI-day estimates",
+      "Prints a morning briefing and an end-of-day record from the ledger",
+      "Tracks closed work, code volume and token usage against your own past records",
+      "Reports burndown, carry-over and estimate variance for a weekly review"
+    ],
+    "defaultPrompt": "What should I work on today?",
+    "websiteURL": "https://github.com/keenkim1202/Hey",
+    "brandColor": "#E3B341"
+  }
+}
