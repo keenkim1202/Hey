@@ -311,7 +311,8 @@ export HEY_WIDTH=120
 
 Anything outside 72 to 120 is clamped, and anything that is not a number is ignored. The
 floor is 72 because the **Progress** rows spend a fixed 51 columns on labels before the
-meter starts, so a narrower card cannot hold them.
+meter starts, so a narrower card cannot hold them. `doctor` reports the width in effect and
+where it came from.
 
 With `HEY_WIDTH` unset, a real terminal is measured and used. An agent running the scripts
 gets a pipe instead of a terminal, where there is nothing to measure and the 78 stands — so

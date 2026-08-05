@@ -33,6 +33,33 @@ import strings as S  # noqa: E402
 WEEKDAY_KO = S.WEEKDAYS["ko"]  # kept for callers that import it
 BLOCKER_WORDS = S.BLOCKER_WORDS  # per-language; detection uses the union
 
+CARD_W = 78  # Default card width. Fits a standard terminal.
+CARD_MIN, CARD_MAX = 72, 120
+
+
+def card_width() -> tuple[int, str]:
+    """The card's column count, and where it came from.
+
+    `HEY_WIDTH` wins, then a real terminal, then the default. When stdout is a pipe --
+    which is how an agent calls these scripts -- probing the terminal only ever returns
+    its 80-column fallback, so it is not worth asking.
+
+    The floor is 72, not 60: the card's progress rows spend a fixed 51 columns on labels
+    before the meter starts, and anything narrower makes them overflow.
+
+    `doctor` reports the source, so returning it beats making the caller re-derive it.
+    """
+    raw = (os.environ.get("HEY_WIDTH") or "").strip()
+    if raw.isdigit():
+        n = int(raw)
+        clamped = max(CARD_MIN, min(CARD_MAX, n))
+        note = "HEY_WIDTH" if clamped == n else f"HEY_WIDTH={n}, clamped"
+        return clamped, note
+    if sys.stdout.isatty():
+        cols = shutil.get_terminal_size().columns
+        return max(CARD_MIN, min(CARD_MAX, cols - 2)), f"terminal, {cols} columns"
+    return CARD_W, "default"
+
 
 # ---------------------------------------------------------------- config
 
@@ -556,6 +583,9 @@ def cmd_doctor(args, cfg):
         else:
             say("warn", f"{tool} not found - the PR log step is skipped")
     ok(f"language {S.lang(cfg)}")
+    cols, source = card_width()
+    hint = "; set HEY_WIDTH to widen it" if source == "default" else ""
+    ok(f"card width {cols} ({source}{hint})")
 
     print("config")
     ok(str(CONFIG)) if CONFIG.exists() else say("warn", f"{CONFIG} does not exist yet")

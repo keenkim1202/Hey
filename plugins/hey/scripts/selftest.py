@@ -106,6 +106,42 @@ assert any('A' * 38 in line for line in folded), folded
 assert any('B' * 38 in line for line in folded), folded
 """
 
+CARD_WIDTH_PROBE = """
+import os, sys; sys.path.insert(0, {here!r})
+import hey
+
+def w(val):
+    os.environ.pop('HEY_WIDTH', None) if val is None else os.environ.update(HEY_WIDTH=val)
+    return hey.card_width()
+
+# This probe runs on a pipe, so there is no terminal to measure and the default stands.
+# Anything that is not a plain number has to fall back rather than raise or read as zero.
+assert not sys.stdout.isatty()
+for junk in (None, '', '   ', 'wide', '-10', '9.5', '1e2'):
+    assert w(junk) == (hey.CARD_W, 'default'), (junk, w(junk))
+
+assert w('96') == (96, 'HEY_WIDTH'), w('96')
+assert w(' 96 ') == (96, 'HEY_WIDTH'), w(' 96 ')
+assert w(str(hey.CARD_MIN)) == (hey.CARD_MIN, 'HEY_WIDTH')
+assert w(str(hey.CARD_MAX)) == (hey.CARD_MAX, 'HEY_WIDTH')
+
+# Out of range is clamped, and the source says so instead of reporting the value as asked
+# for -- `doctor` prints this, and a silent clamp there reads as the setting being honoured.
+assert w('10') == (hey.CARD_MIN, 'HEY_WIDTH=10, clamped'), w('10')
+assert w('999') == (hey.CARD_MAX, 'HEY_WIDTH=999, clamped'), w('999')
+
+# The card has to lay out at whatever the resolver returns, at both ends of the range.
+# `WIDTH` binds at import, so the module is reloaded per width rather than reassigned.
+for val in (str(hey.CARD_MIN), '96', str(hey.CARD_MAX)):
+    os.environ['HEY_WIDTH'] = val
+    sys.modules.pop('board', None)
+    import board as b
+    assert b.WIDTH == int(val), (val, b.WIDTH)
+    assert b._w(b.head('proj', '2026-08-05 (Wed)')) == int(val), (val, b.WIDTH)
+    # The progress rows are why the floor is 72: labels alone take a fixed 51 columns.
+    assert b.WIDTH - 60 >= 12, (val, b.WIDTH)
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -267,6 +303,7 @@ def main() -> int:
     probes = {
         "stats": STATS_PROBE.format(yesterday=yesterday, today=today),
         "display width": WIDTH_PROBE.format(here=str(HERE)),
+        "card width: env, clamp and fallback": CARD_WIDTH_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
     }
 

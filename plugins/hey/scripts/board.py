@@ -16,7 +16,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import sys
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -25,9 +24,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
-    Ledger, ahead_of_base, die, fmt_date, load_config, merge_stats, project_base,
-    project_setting, projects_in_scope, read_stats, record_progress, save_config,
-    today_str, worktree_roots, _sh,
+    Ledger, ahead_of_base, card_width, die, fmt_date, load_config, merge_stats,
+    project_base, project_setting, projects_in_scope, read_stats, record_progress,
+    save_config, today_str, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -374,30 +373,7 @@ RULE = "─"
 DOT = "·"
 
 
-CARD_MIN, CARD_MAX = 72, 120
-
-
-def _card_width() -> int:
-    """Card width, resolved once at import so the layout defaults below inherit it.
-
-    `HEY_WIDTH` wins, then a real terminal, then 78. When stdout is a pipe -- which is
-    how an agent calls this -- probing the terminal only ever returns the 80-column
-    fallback, so it is not worth asking. An agent pasting the card into a chat should
-    set `HEY_WIDTH` a little under the true terminal width, to leave room for the
-    margin the transcript adds.
-
-    The floor is 72, not 60: the progress rows spend a fixed 51 columns on labels
-    before the meter starts, and anything narrower makes them overflow the card.
-    """
-    raw = (os.environ.get("HEY_WIDTH") or "").strip()
-    if raw.isdigit():
-        return max(CARD_MIN, min(CARD_MAX, int(raw)))
-    if sys.stdout.isatty():
-        return max(CARD_MIN, min(CARD_MAX, shutil.get_terminal_size().columns - 2))
-    return 78
-
-
-WIDTH = _card_width()  # Longer lines fold rather than wrap in the terminal.
+WIDTH = card_width()[0]  # Resolved once at import, so the layout defaults below inherit it.
 INDENT = "   "  # Content sits under a section marker, which is two columns plus a space.
 
 

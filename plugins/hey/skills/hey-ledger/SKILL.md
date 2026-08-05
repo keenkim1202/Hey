@@ -136,6 +136,40 @@ numbers are real.
 English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or export
 `HEY_LANG=ko`. Only user-facing text changes; stored data stays language-neutral.
 
+## Card width
+
+The card is 78 columns by default, and `HEY_WIDTH` widens it to at most 120. On a wide
+terminal that is worth setting: lines fold less, and fewer descriptions get clipped to a
+`…`. `doctor` prints the width in effect and where it came from.
+
+**You cannot measure the terminal for them.** Your shell has no tty, so `tput cols`,
+`stty size` and `shutil.get_terminal_size()` all return the same 80-column fallback
+whether or not the terminal is really 80 wide — and a user running `tput cols` themselves
+in the session hits the same fallback. Do not set a width off any of those numbers.
+
+Measure it by asking. Print a ruler in a fenced block and have the user read it back:
+
+```bash
+python3 -c "
+N=240
+print(''.join(str(t*10).rjust(10) for t in range(1, N//10+1)))
+print(''.join(str((i+1)%10) for i in range(N)))
+"
+```
+
+Ask which number is the last one visible before the line wraps. That measures the width
+**inside a fenced code block**, which is the only number that matters — a card you paste
+into the reply is bounded by the block, not by the terminal. Then set `HEY_WIDTH` a little
+under what they report, to leave room for the margin, and put it in the `env` block of
+`~/.claude/settings.json` so it survives the session:
+
+```json
+"env": { "HEY_WIDTH": "120" }
+```
+
+Setting `HEY_WIDTH` turns terminal detection off, so a user who often resizes is better
+off leaving it unset and letting the card measure a real terminal on its own.
+
 ## Skill map
 
 | Skill | When |
