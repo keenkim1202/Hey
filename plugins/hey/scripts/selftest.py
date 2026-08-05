@@ -94,6 +94,16 @@ for limit in (1, 2, 3):
 # A token with no space to break on still has to fit.
 for line in b.fold('x' * 200, '   · ', '     '):
     assert b._w(line) <= b.WIDTH, (b._w(line), line)
+
+# A run of symbols joined by `/` or `·` carries no space, so it has to break at those
+# separators. Two names long enough to force the break inside the second one: an even
+# backtick count per line is what says the break landed between names, not through one.
+BT = chr(96)
+run = BT + 'A' * 38 + BT + '/' + BT + 'B' * 38 + BT
+folded = b.fold(run, '   ', '      ', limit=3)
+assert all(line.count(BT) % 2 == 0 for line in folded), folded
+assert any('A' * 38 in line for line in folded), folded
+assert any('B' * 38 in line for line in folded), folded
 """
 
 BLOCKER_PROBE = """

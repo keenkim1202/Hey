@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -407,27 +408,42 @@ def _cut(s: str, width: int) -> str:
     return out + "…"
 
 
+def _pieces(text: str) -> list:
+    """`(wants a space in front, text)` pairs, split at every place a line may break.
+
+    Spaces are not the only opportunity. A run of symbols joined by `·` or `/` carries no
+    space at all, so breaking on spaces alone splits an identifier down the middle —
+    `URLSessionCo` / `nfig` reads worse than dropping the tail outright, and it is no
+    longer greppable. The separator stays attached to the piece on its left.
+    """
+    out = []
+    for w, word in enumerate(text.split()):
+        parts = [p for p in re.split(r"(?<=[·/,;])", word) if p]
+        out += [(w > 0 and i == 0, p) for i, p in enumerate(parts)]
+    return out
+
+
 def _break_lines(text: str, width: int) -> list:
-    """Split on spaces into lines that each fit `width` columns; hard-break long tokens."""
+    """Lines that each fit `width` columns, breaking at spaces and separators first."""
     out, cur = [], ""
-    for word in text.split():
-        candidate = f"{cur} {word}" if cur else word
-        if _w(candidate) <= width:
-            cur = candidate
+    for wants_space, piece in _pieces(text):
+        joiner = " " if wants_space and cur else ""
+        if _w(cur + joiner + piece) <= width:
+            cur += joiner + piece
             continue
         if cur:
             out.append(cur)
             cur = ""
-        # A path or a backticked symbol can be longer than the whole line on its own.
-        while _w(word) > width:
-            piece = ""
-            for c in word:
-                if _w(piece) + _w(c) > width:
+        # Still too long with a line to itself: a path with no separator in it at all.
+        while _w(piece) > width:
+            head_ = ""
+            for c in piece:
+                if _w(head_) + _w(c) > width:
                     break
-                piece += c
-            out.append(piece)
-            word = word[len(piece):]
-        cur = word
+                head_ += c
+            out.append(head_)
+            piece = piece[len(head_):]
+        cur = piece
     if cur:
         out.append(cur)
     return out
@@ -625,8 +641,11 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     if nxt:
         out += section("next", S.card("tomorrow_next" if mode == "wrap"
                                       else "today_next", LANG))
+        # Three lines here, two everywhere else: these are the items the reader is about
+        # to start, and a next-up entry carries the reason it comes first. Losing that
+        # to an ellipsis costs more than the three lines of card it buys back.
         for n in nxt[:3]:
-            out += fold(n, INDENT, f"{INDENT}   ")
+            out += fold(n, INDENT, f"{INDENT}   ", limit=3)
 
     # -- blocked
     blocked = led.blockers()
