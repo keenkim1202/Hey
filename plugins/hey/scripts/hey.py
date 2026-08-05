@@ -61,6 +61,55 @@ def card_width() -> tuple[int, str]:
     return CARD_W, "default"
 
 
+def wider_card_available(card: int, terminal: int | None) -> int | None:
+    """The width the card could reach on this terminal, when that beats what it has.
+
+    None means there is nothing to act on -- no reading, already at the ceiling, or a
+    terminal no wider than the card. A warning the user cannot clear is noise, and noise
+    is what teaches them to skim past the warnings that matter.
+    """
+    if not terminal:
+        return None
+    could = min(CARD_MAX, terminal - 2)
+    return could if could > card else None
+
+
+def terminal_columns() -> int | None:
+    """Columns of the pty this process hangs off, walking up to find one.
+
+    A pipe has no terminal of its own, but the session that spawned it usually does, a few
+    parents up. Asking that device directly is the only probe here that returns a real
+    number rather than an 80-column fallback.
+
+    `card_width` deliberately does not call this. A pty's window size is not the width of
+    the fenced block an agent pastes a card into, and silently guessing wrong there is
+    worse than the default. It exists so `doctor` can offer a number to confirm, which is
+    cheaper than opening with a ruler when the two usually agree.
+
+    None whenever the answer would be a guess: no tty in the ancestry, an unreadable
+    device, or an `stty` that wants the other flag.
+    """
+    pid, seen = os.getpid(), 0
+    while pid > 1 and seen < 12:
+        seen += 1
+        out = _sh(["ps", "-o", "ppid=,tty=", "-p", str(pid)], Path.cwd())
+        if not out:
+            return None
+        parts = out.split()
+        if len(parts) < 2:
+            return None
+        parent, tty = parts[0], parts[-1]
+        if tty not in ("??", "-", "?"):
+            # BSD spells the device flag `-f`, GNU spells it `-F`. Neither knows the other.
+            for flag in ("-f", "-F"):
+                size = _sh(["stty", flag, f"/dev/{tty}", "size"], Path.cwd()).split()
+                if len(size) == 2 and size[1].isdigit() and int(size[1]) > 0:
+                    return int(size[1])
+            return None
+        pid = int(parent) if parent.isdigit() else 0
+    return None
+
+
 # ---------------------------------------------------------------- config
 
 
@@ -584,8 +633,14 @@ def cmd_doctor(args, cfg):
             say("warn", f"{tool} not found - the PR log step is skipped")
     ok(f"language {S.lang(cfg)}")
     cols, source = card_width()
-    hint = "; set HEY_WIDTH to widen it" if source == "default" else ""
-    ok(f"card width {cols} ({source}{hint})")
+    ok(f"card width {cols} ({source})")
+    real = terminal_columns()
+    could = wider_card_available(cols, real)
+    if could:
+        # The pty is the window and not the width of a fenced block, so this asks for a
+        # confirmation rather than telling anyone to write the number down.
+        say("warn", f"terminal looks {real} columns wide, so the card could be {could} "
+                    f"instead of {cols}. Confirm the usable width, then set HEY_WIDTH")
 
     print("config")
     ok(str(CONFIG)) if CONFIG.exists() else say("warn", f"{CONFIG} does not exist yet")

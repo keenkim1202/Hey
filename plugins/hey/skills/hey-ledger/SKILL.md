@@ -142,8 +142,21 @@ The card is 78 columns by default, and `HEY_WIDTH` widens it to at most 120. On 
 terminal that is worth setting: lines fold less, and fewer descriptions get clipped to a
 `…`. `doctor` prints the width in effect and where it came from.
 
-**You cannot measure the terminal for them.** Your shell has no tty, so every probe fails,
-each in its own misleading way:
+**Start from `doctor`, not from a probe of your own.** It reports the width in effect, and
+warns with a number when the terminal has room the card is not using:
+
+```
+ok    card width 78 (default)
+warn  terminal looks 154 columns wide, so the card could be 120 instead of 78.
+      Confirm the usable width, then set HEY_WIDTH
+```
+
+That number comes from walking up the process tree to the pty the session hangs off and
+asking it directly — the only probe here that returns a real reading. **Confirm it before
+writing it anywhere.** It is the window's width, not the width of the fenced block you
+paste a card into, and those can differ wherever the UI adds padding of its own.
+
+Every probe you would reach for instead fails, each in its own misleading way:
 
 | Probe | What you get |
 |---|---|
@@ -153,15 +166,16 @@ each in its own misleading way:
 | `echo $COLUMNS` | `0` — a number, and a useless one |
 
 `sys.stdout.isatty()` is `False`, and that is the one honest answer in the set: it says
-there is nothing here to measure. A user running `tput cols` themselves in the session hits
-the same fallback, so their answer is no better than yours.
+there is nothing on *this* end to measure. A user running `tput cols` themselves in the
+session hits the same fallback, so their answer is no better than yours.
 
 Do not set a width off any of those numbers, and note that they mislead in *different*
 directions. A command that errors looks broken, which makes the one answering `80` look
 like it measured something. `0` looks like a value you could pass straight through, and
 `HEY_WIDTH=0` is accepted — `isdigit()` takes it, then the floor clamps it to 72.
 
-Measure it by asking. Print a ruler in a fenced block and have the user read it back:
+If the user says the proposed number is off, or `doctor` had none to offer, measure by
+asking. Print a ruler in a fenced block and have them read it back:
 
 ```bash
 python3 -c "
