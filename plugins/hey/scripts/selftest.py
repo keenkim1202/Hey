@@ -242,6 +242,16 @@ import sys; sys.path.insert(0, {here!r})
 from hey import Ledger, clip_to, display_width as dw
 
 t = Ledger._title
+# Markers are metadata and the name is half the key, so annotating an item must not rename
+# it. This is the invariant that makes `[AI n]`, `[since]` and `[branch]` safe to add to a
+# ledger that already has history.
+for marker in ('`[AI 0.3]`', '`[since 2020-01-01]`', '`[since unknown]`',
+               '`[branch feat/x]`'):
+    for line in ('**Item** — a description — 3 MD / AI 0.4',
+                 '**Item** (a list, of things)',
+                 'Plain item with no emphasis'):
+        assert t(line + ' ' + marker) == t(line), (marker, line, t(line + ' ' + marker))
+        assert t(marker + ' ' + line) == t(line), (marker, line)
 # A trailing parenthetical is a list of what the item covers, and dropping it is what turns
 # a line into a name.
 assert t('**Scaffold** (Alpha, Beta, Gamma)') == 'Scaffold'

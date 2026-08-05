@@ -343,6 +343,9 @@ class Ledger:
     # Which branch an item's work lives on. Branches outlast worktrees, whose paths are
     # temporary, and they are what commits and pull requests actually attach to.
     BRANCH = re.compile(r"\[branch ([^\]\s]+)\]")
+    # Every marker, for stripping them back out of anything a person reads.
+    MARKERS = re.compile(r"`?\[(?:AI \d+\.?\d*|since (?:\d{4}-\d{2}-\d{2}|unknown)"
+                         r"|branch [^\]\s]+)\]`?")
 
     def __init__(self, project: dict):
         self.project = project
@@ -381,8 +384,8 @@ class Ledger:
                 # the marker is read there too and credited to the item that owns it.
                 cur["branches"] += self.BRANCH.findall(k[2])
 
-    @staticmethod
-    def _title(text: str) -> str:
+    @classmethod
+    def _title(cls, text: str) -> str:
         """The item's name, which is also half its key -- so this has to stay stable.
 
         A trailing parenthetical is almost always a list of what the item covers, and
@@ -392,6 +395,9 @@ class Ledger:
         more than twice what precedes the opening one: at that ratio the head is not the
         title, it is the first few words of one.
         """
+        # Markers are metadata, so they never belong in the name -- and the name is half
+        # the key, so leaving one in silently renames the item and severs its history.
+        text = cls.MARKERS.sub("", text)
         seg = re.split(r" — | - ", text, maxsplit=1)[0]
         i = seg.find("(")
         if i != -1:
@@ -534,8 +540,7 @@ class Ledger:
                         days = None
                 # The title is a key first, and a key that reads well is a coincidence.
                 # The listing wants the line as written, minus the markup and the markers.
-                shown = self.SINCE.sub("", self.BRANCH.sub("", it["text"]))
-                shown = shown.replace("**", "").replace("`", "")
+                shown = self.MARKERS.sub("", it["text"]).replace("**", "").replace("`", "")
                 out.append({"key": self.key(it), "title": it["title"],
                             "shown": " ".join(shown.split()),
                             "section": it["section"],
