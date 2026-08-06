@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+import strings as S  # noqa: E402
 LEDGER = """# fixture ledger
 
 **Progress (boxes): 0/0 (0%)**
@@ -395,6 +398,95 @@ def _frontmatter(path: Path) -> dict | None:
     return meta
 
 
+PLACEHOLDER = re.compile(r"{(\w+)}")
+
+# What each FLAIR pool's caller actually passes. `board.flair` forwards `gap=` only on the
+# three shortfall pools; `peak` and `zero` are called with nothing. A line reaching for
+# anything else raises `KeyError` at format time, in one language, on one kind of day.
+FLAIR_ARGS = {"peak": set(), "close": {"gap"}, "mid": {"gap"}, "far": {"gap"}, "zero": set()}
+
+
+def string_pack_checks() -> list:
+    """Every language must define the same keys, taking the same placeholders.
+
+    None of this is a syntax error and none of it fails an English run: a key added to one
+    language, or a `{placeholder}` renamed in one of them, raises `KeyError` only for the
+    user who set that language, and only on the day the branch that prints it fires.
+    Running the self-test twice, once per language, does not cover it either -- no fixture
+    reaches every card branch, so most of these strings are never formatted at all.
+
+    Checked statically instead: compare the packs to each other, then confirm every key the
+    scripts *name* exists. The reverse -- a defined key nobody uses -- is deliberately not
+    checked, because keys are routinely selected by expression (`S.card("ahead" if ... else
+    "behind")`) and only the first literal is visible to a regex.
+    """
+    out = []
+    langs = sorted(S.WEEKDAYS)
+    packs = {"CARD": S.CARD, "FLAIR": S.FLAIR, "STREAK": S.STREAK,
+             "METRIC_LABELS": S.METRIC_LABELS, "UNITS": S.UNITS,
+             "STATE_LABELS": S.STATE_LABELS}
+
+    for name, pack in packs.items():
+        absent = [lc for lc in langs if lc not in pack]
+        if absent:
+            out.append(("strings", f"{name} has no entry for {', '.join(absent)}"))
+            continue
+        for lc in langs[1:]:
+            gap = set(pack[langs[0]]) ^ set(pack[lc])
+            if gap:
+                out.append(("strings", f"{name} keys differ between {langs[0]} and {lc}: "
+                                       f"{', '.join(sorted(gap))}"))
+    for lc in langs:
+        if len(S.WEEKDAYS[lc]) != 7:
+            out.append(("strings",
+                        f"WEEKDAYS[{lc}] has {len(S.WEEKDAYS[lc])} entries, not 7"))
+
+    # Everything below indexes a pack by language. A language listed in WEEKDAYS but absent
+    # from a pack is already reported above, and reaching for it again here would raise
+    # `KeyError` -- a checker that crashes on the very state it exists to diagnose, taking
+    # the rest of the findings with it.
+    full = [lc for lc in langs if all(lc in pack for pack in packs.values())]
+    if not full:
+        return out
+
+    for name, pack in (("CARD", S.CARD), ("STREAK", S.STREAK)):
+        for key, text in pack[full[0]].items():
+            want = set(PLACEHOLDER.findall(text))
+            for lc in full[1:]:
+                got = set(PLACEHOLDER.findall(pack[lc].get(key, "")))
+                if got != want:
+                    out.append(("strings", f"{name}[{key!r}] takes {sorted(want)} in "
+                                           f"{full[0]} but {sorted(got)} in {lc}"))
+    for kind, allowed in FLAIR_ARGS.items():
+        for lc in full:
+            for line in S.FLAIR[lc].get(kind, []):
+                extra = set(PLACEHOLDER.findall(line)) - allowed
+                if extra:
+                    out.append(("strings", f"FLAIR[{lc}][{kind!r}] uses {sorted(extra)}, "
+                                           f"which the caller does not pass"))
+    unknown = sorted(set(S.FLAIR[full[0]]) - set(FLAIR_ARGS))
+    if unknown:
+        out.append(("strings", f"FLAIR pool(s) {unknown} have no declared caller "
+                               f"arguments, so nothing checks what they may reference"))
+
+    src = "\n".join((HERE / f).read_text() for f in ("hey.py", "board.py"))
+    named = [(r"\bS\.card\(\s*[\"']([a-z_]+)[\"']", "S.card", S.CARD),
+             (r"\bS\.streak\(\s*[\"']([a-z_]+)[\"']", "S.streak", S.STREAK),
+             (r"\bflair\(\s*[\"']([a-z_]+)[\"']", "flair", S.FLAIR)]
+    for pattern, label, pack in named:
+        for key in sorted(set(re.findall(pattern, src))):
+            for lc in full:
+                if key not in pack[lc]:
+                    out.append(("strings",
+                                f"{label}({key!r}) is called, but {lc} has no such key"))
+    # `board.section` indexes MARK directly, so a card section with no marker is a KeyError
+    # on the card itself rather than a missing glyph.
+    for key in sorted(set(re.findall(r"\bsection\(\s*[\"']([a-z_]+)[\"']", src))):
+        if key not in S.MARK:
+            out.append(("strings", f"section({key!r}) is called, but MARK has no marker"))
+    return out
+
+
 def static_checks() -> list:
     """Manifest and frontmatter checks. No fixture, no subprocess, no network.
 
@@ -580,10 +672,15 @@ def main() -> int:
         if not passed:
             failed.append((label, detail))
 
-    for label, detail in static_checks():
-        check(f"static: {label}", False, detail)
-    if not failed:
-        check("static: manifests and component names", True)
+    # Reported per group so a clean group still says so. Folding them together meant one
+    # broken manifest silenced the all-clear for everything else checked statically.
+    for group, probe in (("manifests and component names", static_checks),
+                         ("language packs agree", string_pack_checks)):
+        problems = probe()
+        for label, detail in problems:
+            check(f"static: {label}", False, detail)
+        if not problems:
+            check(f"static: {group}", True)
 
     for case in cases:
         cmd, label = case[0], case[1]
