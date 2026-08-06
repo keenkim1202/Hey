@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
-    Ledger, ahead_of_base, card_width, die, fmt_date, load_config, merge_stats,
+    Ledger, ahead_of_base, card_width, day_range, die, fmt_date, load_config, merge_stats,
     clip_to, need_history, project_base, project_setting, projects_in_scope, read_stats,
     record_progress, save_config, today_str, unpushed, worktree_roots, _sh,
 )
@@ -43,8 +43,7 @@ def code_lines(project: dict, on: str, author: str | None) -> dict:
     seen_commits: set[str] = set()
     added = deleted = commits = 0
     for w in worktree_roots(root):
-        cmd = ["git", "log", "--all", "--no-merges",
-               f"--since={on} 00:00", f"--until={on} 23:59",
+        cmd = ["git", "log", "--all", "--no-merges", *day_range(on),
                "--format=__C__%H", "--numstat"]
         if author:
             cmd.append(f"--author={author}")
@@ -596,7 +595,7 @@ def _touched(worktree: Path, on: str, limit: int = 2) -> list:
     Passing `--all` would scan every branch and print an identical list for every
     worktree, so it is deliberately omitted.
     """
-    files = _lines(["git", "log", f"--since={on} 00:00", f"--until={on} 23:59",
+    files = _lines(["git", "log", *day_range(on),
                     "--name-only", "--format="], worktree)
     return sorted(set(files))[:limit]
 
@@ -642,8 +641,8 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
         for b in logged[:3]:
             out += fold(b, bullet, under)
     else:
-        commits = _lines(["git", "log", "--all", f"--since={focus} 00:00",
-                          f"--until={focus} 23:59", "--format=%h %s"], root)
+        commits = _lines(["git", "log", "--all", *day_range(focus),
+                          "--format=%h %s"], root)
         if commits:
             for c in commits[:3]:
                 out += fold(c, bullet, under)

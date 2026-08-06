@@ -184,6 +184,20 @@ def _sh(cmd: list[str], cwd: Path) -> str:
         return ""
 
 
+def day_range(on: str) -> list[str]:
+    """`git log` arguments covering one whole calendar day.
+
+    `--until <day> 23:59` means `23:59:00`, so a commit made in the last minute of the day
+    falls outside it -- and the next day starts at `00:00`, so it falls outside that one
+    too and is counted on no day at all. Someone finishing up just before midnight is
+    exactly who runs `/seeya`.
+
+    Defined once because five call sites spell this range out, and a boundary that is
+    written five times is a boundary that is wrong in four places.
+    """
+    return [f"--since={on} 00:00:00", f"--until={on} 23:59:59"]
+
+
 def worktree_roots(root: Path) -> list[Path]:
     """Every worktree of a repository, the main one first.
 
@@ -1616,10 +1630,10 @@ def cmd_context(args, cfg):
         root = Path(p["root"])
         print(f"[{p['name']}] {fmt_date(on)}")
         for w in worktree_roots(root):
-            log = _sh(["git", "log", "--all", f"--since={on} 00:00",
-                       f"--until={on} 23:59", "--format=%h %s"], w)
-            files = _sh(["git", "log", "--all", f"--since={on} 00:00",
-                         f"--until={on} 23:59", "--name-only", "--format="], w)
+            log = _sh(["git", "log", "--all", *day_range(on),
+                       "--format=%h %s"], w)
+            files = _sh(["git", "log", "--all", *day_range(on),
+                         "--name-only", "--format="], w)
             st = _sh(["git", "status", "--short"], w)
             br = _sh(["git", "branch", "--show-current"], w)
             touched = sorted({f for f in files.split("\n") if f.strip()})

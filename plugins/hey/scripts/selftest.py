@@ -1031,6 +1031,29 @@ def main() -> int:
     check("add: a re-add with no --base reports the base it kept, not `unresolved`",
           code == 0 and "origin/trunk  (kept)" in out, out)
 
+    # `git log --until <day> 23:59` means 23:59:00, so a commit made in the last minute of
+    # the day fell outside it -- and the next day starts at 00:00, so it fell outside that
+    # one too and was counted on no day at all. Its own repository, holding nothing but
+    # that commit, so the count cannot be satisfied by anything else.
+    late = tmp / "late-commit"
+    late.mkdir()
+    git("init", "-q", cwd=late)
+    (late / "late.txt").write_text("committed in the last minute of the day\n")
+    git("add", "-A", cwd=late)
+    stamp = f"{today}T23:59:30"
+    subprocess.run(["git", "commit", "-qm", "the last minute"], cwd=str(late),
+                   env={**env, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp},
+                   capture_output=True, text=True)
+    probe = ("import sys; sys.path.insert(0, %r)\n"
+             "from board import code_lines\n"
+             "got = code_lines({'root': %r}, %r, None)\n"
+             "assert got['commits'] == 1, got\n"
+             "assert got['added'] == 1, got\n"
+             % (str(HERE), str(late), today))
+    code, out = run(["-c", probe], env, proj)
+    check("code: a commit in the last minute of the day is counted on that day",
+          code == 0, out)
+
     for label, detail in failed:
         print(f"\n--- {label} ---\n{detail}")
     if args.keep:
