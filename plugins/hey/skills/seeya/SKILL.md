@@ -103,11 +103,11 @@ sized too large. **Never substitute another metric to make the day look producti
 - Skip candidates blocked by a pending decision, and give the reason in one line
 
 ```
-[ Tomorrow  08-06 Thu ]
+**[ Tomorrow  08-06 Thu ]**
 1. OrchardClient — declare the 3 openapi packages + AuthMiddleware    AI 0.4
 2. Domain/Data Account — country list and social login wiring            AI 0.7
 
-[ Clean up first ]
+**[ Clean up first ]**
 - `wt-checkout` has 2 commits no remote has
 ```
 

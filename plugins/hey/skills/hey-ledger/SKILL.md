@@ -272,15 +272,18 @@ them. Your writing goes **under** the card, never in place of it.
 **Shape.** At most three blocks. Each is a one-line heading and two to four bullets. One
 closing sentence, and only if it says something the numbers do not.
 
-**Headings are bracket labels, padded inside** — `[ Pick up ]`, `[ Today  8h = AI 1.0 ]`,
-`[ Blocked ]` — not markdown headings. A `##` renders as one more weight of bold in a
-terminal, which does not separate anything next to a card built out of box drawing.
-Brackets read as labels at a glance and stay out of the card's way, and the inner spaces
-keep the bracket from crowding the first word so the label reads as a label.
+**Headings are bold bracket labels, padded inside** — `**[ Pick up ]**`,
+`**[ Today  8h = AI 1.0 ]**`, `**[ Blocked ]**` — never markdown headings. A `##` renders
+as one more weight of bold in a terminal, which separates nothing next to a card built out
+of box drawing. The brackets read as labels at a glance, the inner spaces keep the bracket
+off the first word, and the bold carries the weight a heading would have given.
+
+The asterisks are the markdown, not part of the label: what the reader sees is a bold
+`[ Pick up ]`.
 
 This holds for **every** block you write, not only the ones named in the examples. A
-heading you invent for the occasion — `[ Verified in code ]`, `[ What changed ]` — takes
-the same form.
+heading you invent for the occasion — `**[ Verified in code ]**`, `**[ What changed ]**` —
+takes the same form.
 
 **One divider, and only one.** A rule between the card and your prose marks where script
 output ends and judgement begins. Do not put rules between the prose blocks — with three
@@ -294,16 +297,16 @@ and borrowing it blurs which lines a script produced.
 
 ────────────────────────────────────────────
 
-[ Pick up ]
+**[ Pick up ]**
 - lane-a-client-transport  keen-ios/client-transport
   The lane for today's item 1. Resume there
 
-[ Today  8h = AI 1.0 ]
+**[ Today  8h = AI 1.0 ]**
 1. SamanthaClient transport      AI 0.5 (rough split)
 2. codegen post-processing       AI 0.1 (rough split)
    AI 0.6 total. Item 3 skipped — its prerequisite is unfinished
 
-[ Blocked ]
+**[ Blocked ]**
 - Blocks item 1 today: X-Region undecided
 - Someone else must clear: 2xx on 34 ops, code enum, prod host
 ```
