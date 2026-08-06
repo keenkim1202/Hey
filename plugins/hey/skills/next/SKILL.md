@@ -45,17 +45,17 @@ expect it and mark that as a guess.
 Four blocks at most, bracket labels, no card here — this is not `/wassup`.
 
 ```
-[Next]  Heading anchors — collision suffixes           AI 0.25 (rough split)
+[ Next ]  Heading anchors — collision suffixes           AI 0.25 (rough split)
 
-[Why now]
+[ Why now ]
 - P0 renderer, item 2 of 4. The TOC renderer below it waits on this
 - #14 landed the slug generator, so the collision case is the only gap left
 
-[Where]
+[ Where ]
 - Modules/Render/Sources/Slug.swift — the generator, no collision handling
 - Modules/Render/Tests/SlugTests.swift — 6 cases, none with a duplicate title
 
-[Watch for]
+[ Watch for ]
 - The suffix scheme changes anchor URLs. Anything already linking to a page anchor breaks
 ```
 

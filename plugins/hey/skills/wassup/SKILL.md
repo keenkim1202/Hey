@@ -73,7 +73,7 @@ the state most easily lost. Point at the directory and branch; do not switch to 
   reproducing against a live server) does not shrink with tooling. If it is mixed in, say so
 
 ```
-[Today  8h = AI 1.0]
+[ Today  8h = AI 1.0 ]
 1. Wire the app root — OnboardingView + toast host in OrchardApp     AI 0.1
 2. Extend CartStore — expose loading state, 3-stage error handler        AI 0.3 (rough split)
    Total AI 0.4. You are 0.2 behind the weekly pace, so there is room for one more.
