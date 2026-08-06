@@ -794,8 +794,16 @@ def main() -> int:
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
         ([hey, "blockers"], "blockers: lists them all", "5 blocked"),
-        ([hey, "blockers"], "blockers: nags only about the unanswered ones",
-         "1 with no start recorded"),
+        # The fixture carries one of every state a blocker's age can be in, and each calls
+        # for a different move, so each has to be told apart on the screen you triage from.
+        ([hey, "blockers"], "blockers: a typo'd date is not a missing one",
+         "is not a real date"),
+        ([hey, "blockers"], "blockers: a future date says the wait has not started",
+         "dated ahead of today"),
+        ([hey, "blockers"], "blockers: `unknown` is a settled answer, not a gap",
+         "could not be found"),
+        ([hey, "blockers"], "blockers: still nags about the ones nobody has dated",
+         "no start recorded"),
         ([hey, "doctor"], "doctor"),
         ([hey, "doctor"], "doctor: flags a `[since]` that is not a real date",
          "are not a real date"),

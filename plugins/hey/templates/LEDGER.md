@@ -85,7 +85,13 @@ Things you cannot resolve yourself. Put a waiting word in the text — `waiting`
 `TBD`, `needs decision`, `pending` — and the scripts will treat it as a blocker, drop it from
 `/hey-run` candidates and count how long it has been stuck.
 
-- [ ] <what is blocked> — <who has to clear it> — **needs decision**
+Say when the wait started with `[since YYYY-MM-DD]`. The age is what decides which blocker
+to go chase, and without the marker it can only be inferred once several days are on
+record — which a blocker that predates this file will never have. `[since unknown]` when
+the start genuinely cannot be found: that is a settled answer, and it stops the tools
+asking again.
+
+- [ ] <what is blocked> — <who has to clear it> — **needs decision** `[since YYYY-MM-DD]`
 
 ---
 

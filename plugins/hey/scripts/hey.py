@@ -1376,6 +1376,30 @@ def cmd_note(args, cfg):
     print(f"[{p['name']}] note added -> {path}\n{bullet}")
 
 
+def _blocker_age(b: dict) -> tuple[str, str | None]:
+    """(what goes in the age column, what that mark means when it is not a number).
+
+    Four different things leave a blocker with no age, and each calls for a different
+    move: a date that is not a date is a typo to fix, a date the calendar has not reached
+    says the wait has not started, `unknown` is settled and wants nothing, and no marker at
+    all is a question nobody has asked yet. One dash for all four made the last three
+    indistinguishable from each other on the one screen where you go to triage them.
+
+    The marks are ASCII on purpose. This column is right-aligned, and an arrow or a bullet
+    is East Asian Width `A` -- one column by measurement, two as drawn in a CJK terminal,
+    which is the same trap `strings.MARK` documents for the section glyphs.
+    """
+    if b["days"] is not None:
+        return f'{b["days"]}d', None
+    if b["bad_since"]:
+        return "!", "`[since]` is not a real date, so no age can be read from it"
+    if b["since"] == "unknown":
+        return "?", "the start could not be found, and that is a settled answer"
+    if b["since"]:
+        return ">", "dated ahead of today, so the wait has not started"
+    return "—", "no start recorded. Add `[since YYYY-MM-DD]`, or `[since unknown]`"
+
+
 def cmd_blockers(args, cfg):
     """Every blocked item, oldest wait first.
 
@@ -1389,19 +1413,18 @@ def cmd_blockers(args, cfg):
             print(f"[{p['name']}] nothing blocked")
             continue
         rows.sort(key=lambda b: -(b["days"] if b["days"] is not None else -1))
-        # Only the ones nobody has answered are worth nagging about. Counting the settled
-        # `unknown` ones alongside them turns the hint into a permanent line of noise.
-        unasked = sum(1 for b in rows if b["since"] is None)
         print(f"[{p['name']}] {len(rows)} blocked")
+        # Only the marks actually used get explained. A fixed legend is four lines of the
+        # same noise every day, and noise is what teaches the reader to skip the line that
+        # was about their typo.
+        legend: dict[str, str] = {}
         for b in rows:
-            if b["days"] is not None:
-                age = f'{b["days"]}d'
-            else:
-                age = "?" if b["since"] == "unknown" else "—"
+            age, note = _blocker_age(b)
+            if note:
+                legend[age] = note
             print(f"  {age:>5}  {clip_to(b['shown'], card_width()[0] - 9)}")
-        if unasked:
-            print(f"  {unasked} with no start recorded. Add `[since YYYY-MM-DD]`, "
-                  f"or `[since unknown]` when it cannot be found")
+        for mark, note in legend.items():
+            print(f"  {mark:>5}  {note}")
 
 
 def cmd_notes(args, cfg):
