@@ -380,6 +380,47 @@ none = chr(10).join(b.leaderboard([{{'date': '2026-03-01', 'project': 'x'}}],
 assert '0.00' not in none, none
 """
 
+CARD_FIT_PROBE = """
+import os, sys; sys.path.insert(0, {here!r})
+import hey
+from hey import load_config, today_str
+
+# Nothing checked that a rendered card fits the card. `head` and `fold` were held to the
+# width individually, but every other row is assembled by hand from padded columns, and one
+# that overruns pushes the aligned rows under it out of true -- silently, and only in the
+# language whose labels happen to be wider.
+cfg = load_config()
+p = [x for x in cfg['projects'] if x['name'] == 'fixture'][0]
+
+# Enough days that the average row's own count reaches three digits, which is where its
+# label is longest. The fixture cannot supply these: it has one day carrying closed work,
+# and the card omits the leaderboard below two.
+rows = [{{'date': '2026-%02d-%02d' % (m, d), 'project': 'x', 'earned_ai': 1.0}}
+        for m in (1, 2, 3, 4) for d in range(1, 29)]
+
+# Checked at the floor as well as the default. The floor is the width the rows were sized
+# against, and a column that only just fits at 78 has nowhere to go at 72. `WIDTH` binds at
+# import, so the module is reloaded per width rather than reassigned.
+for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
+    os.environ['HEY_WIDTH'] = want
+    sys.modules.pop('board', None)
+    import board as b
+    assert b.WIDTH == int(want), (want, b.WIDTH)
+
+    seen = 0
+    for mode in ('brief', 'wrap'):
+        for line in b.card(p, cfg, today_str(), mode):
+            seen += 1
+            assert b._w(line) <= b.WIDTH, (want, mode, b._w(line), b.WIDTH, line)
+    # A card that rendered almost nothing would pass the loop above without testing much.
+    assert seen > 20, (want, seen)
+
+    board = b.leaderboard(rows, '2026-01-01', 'ai', 6)
+    assert any('112' in ln for ln in board), board
+    for line in board:
+        assert b._w(b.INDENT + line) <= b.WIDTH, (want, b._w(b.INDENT + line), line)
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -606,8 +647,14 @@ def main() -> int:
     today = date.today().isoformat()
     (proj / "TASKS.local.md").write_text(LEDGER.format(today=today))
 
-    env = {**os.environ, "HEY_HOME": str(home), "HEY_LANG": args.lang,
-           "HEY_TRANSCRIPTS": str(empty)}
+    # Every `HEY_*` is dropped and only the three the fixture owns are put back. A shell
+    # with `HEY_WIDTH=120` set used to run the whole card-layout suite at a width CI never
+    # sees, so a row overrunning the 78-column default passed here and failed on somebody
+    # else's machine. Dropping the prefix rather than that one name is what keeps the next
+    # variable someone adds from leaking in the same way. Probes that care set their own.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HEY_")}
+    env.update({"HEY_HOME": str(home), "HEY_LANG": args.lang,
+                "HEY_TRANSCRIPTS": str(empty)})
     for var in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
         env[var] = "selftest"
     for var in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
@@ -649,6 +696,7 @@ def main() -> int:
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
         "leaderboard: zero days count toward the average": BOARD_AVG_PROBE.format(
             here=str(HERE)),
+        "every rendered card row fits the card": CARD_FIT_PROBE.format(here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
