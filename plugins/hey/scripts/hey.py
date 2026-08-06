@@ -820,7 +820,15 @@ def cmd_add(args, cfg):
         ledger.write_text(tpl.read_text())
         created = True
 
-    entry = {"name": name, "root": str(root), "ledger": str(ledger)}
+    # Re-adding an already-registered project is a routine thing to do -- `doctor` tells you
+    # to, in three separate places, whenever the base branch is wrong or the ledger is
+    # missing. Rebuilding the entry from scratch threw away everything `add` does not
+    # manage, so following that advice silently deleted the project's goals. Only the
+    # fields this command actually resolves are overwritten; a setting is cleared by
+    # `remove` and a fresh `add`, or by editing the config.
+    prior = next((p for p in cfg["projects"] if p["name"] == name), None)
+    entry = dict(prior or {})
+    entry.update({"name": name, "root": str(root), "ledger": str(ledger)})
     if args.ledger_log:
         entry["ledger_log"] = str(Path(args.ledger_log).expanduser().resolve())
     if base:
@@ -836,13 +844,30 @@ def cmd_add(args, cfg):
         note = ""
     else:
         note = "  [missing - re-run with --init]"
-    print(f"registered: {name}\n  root:   {root}\n  ledger: {ledger}{note}")
+    print(f"{'updated' if prior else 'registered'}: {name}"
+          f"\n  root:   {root}\n  ledger: {ledger}{note}")
+    # Named rather than merely kept. A re-add that quietly carries settings forward is
+    # better than one that drops them, but the user still has to be able to see what this
+    # entry holds beyond the three things they just typed.
+    kept = sorted(k for k in entry
+                  if k not in ("name", "root", "ledger", "ledger_log", "base"))
+    if prior and kept:
+        print(f"  kept:   {', '.join(kept)}")
     if entry.get("ledger_log"):
         exists = "" if Path(entry["ledger_log"]).exists() else "  [missing]"
         print(f"  log:    {entry['ledger_log']}{exists}")
-    if base:
-        print(f"  base:   origin/{base}"
-              f"{'' if args.base else '  (detected)'}")
+    # Read off the entry, not off `base`. On a re-add where the remote cannot be inspected
+    # the entry keeps the base already on record, and reporting "unresolved" there
+    # contradicts the config this command just wrote.
+    settled = entry.get("base")
+    if settled:
+        if args.base:
+            how = ""
+        elif base:
+            how = "  (detected)"
+        else:
+            how = "  (kept)"
+        print(f"  base:   origin/{settled}{how}")
     else:
         print("  base:   unresolved - unpushed commits cannot be counted. "
               "Re-run with `--base <branch>`")

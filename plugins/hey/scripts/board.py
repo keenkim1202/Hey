@@ -374,6 +374,17 @@ def cmd_goal(args, cfg):
         die("no project in scope. Register one with `hey.py add <path>`")
 
     if args.set is not None or args.daily is not None:
+        # Setting a goal is a write, and a write must not fan out because of a config
+        # default. `scope: all` is a *reading* preference -- it widens what the reports
+        # cover -- and inheriting it here overwrote every project's goal with one number,
+        # which is the outcome `project_setting` exists to warn about: one target measured
+        # against each project's slice of the work, so every card looks behind.
+        #
+        # An explicit `--scope all` is a different thing. That is someone asking for it.
+        if len(projs) > 1 and not (args.project or args.scope):
+            names = ", ".join(p["name"] for p in projs)
+            die(f"a goal belongs to one project, and {len(projs)} are in scope ({names}). "
+                f"Pass `--project <name>`, or `--scope all` to mean all of them")
         for p in projs:
             if args.set is not None:
                 p["weekly_goal_ai"] = args.set

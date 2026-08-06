@@ -875,7 +875,13 @@ def main() -> int:
     for n in range(11):
         git("commit", "-q", "--allow-empty", "-m", f"develop {n}")
     git("push", "-q", "origin", "develop")
-    run([hey, "add", str(proj), "--name", "fixture", "--base", "main"], env, proj)
+    # `doctor` tells you to re-add whenever the base is wrong, so this is a path users are
+    # actively sent down. It used to rebuild the entry from scratch, which deleted the
+    # goals set earlier in this run -- following the advice destroyed data.
+    code, out = run([hey, "add", str(proj), "--name", "fixture", "--base", "main"],
+                    env, proj)
+    check("add: re-adding says so, and names what it carried forward",
+          code == 0 and "updated: fixture" in out and "kept:" in out, out)
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: flags a base the working branch has left behind",
           "If `develop` is what work merges into" in out, out)
@@ -907,6 +913,33 @@ def main() -> int:
     # splits the day in two, and `notes` reads them back per date.
     check("note: a second note the same day joins today's heading",
           body.count(f"### {today}") == 1 and "second note" in body, body)
+
+    # Two projects are registered by now and the scope was set to `all` well before this
+    # point, so `goal --set` inherits it. Setting a goal is a write, and inheriting a
+    # reading preference used to overwrite every project's target with one number.
+    code, out = run([board, "goal", "--set", "9.0"], env, proj)
+    check("goal: refuses to write one number across every project in scope",
+          code != 0 and "belongs to one project" in out, out)
+    code, out = run([board, "goal", "--set", "9.0", "--project", "split"], env, proj)
+    check("goal: named project, and it lands", code == 0 and "[split]" in out, out)
+    goals = {p["name"]: p.get("weekly_goal_ai")
+             for p in json.loads((home / "config.json").read_text())["projects"]}
+    check("goal: the other project keeps the goal it already had",
+          goals.get("fixture") == 5.0 and goals.get("split") == 9.0, goals)
+    # Asking for all of them explicitly is a different thing, and still works.
+    code, out = run([board, "goal", "--set", "1.0", "--scope", "all"], env, proj)
+    check("goal: an explicit --scope all sets them together",
+          code == 0 and out.count("goal set:") == 2, out)
+
+    # This project is not a git repository, so the remote cannot be inspected and detection
+    # comes back with nothing. The base already on record is kept -- and has to be reported
+    # as kept, because printing "unresolved" would contradict the config just written.
+    run([hey, "add", str(split), "--name", "split", "--ledger", str(primary),
+         "--base", "trunk"], env, proj)
+    code, out = run([hey, "add", str(split), "--name", "split", "--ledger", str(primary)],
+                    env, proj)
+    check("add: a re-add with no --base reports the base it kept, not `unresolved`",
+          code == 0 and "origin/trunk  (kept)" in out, out)
 
     for label, detail in failed:
         print(f"\n--- {label} ---\n{detail}")
