@@ -81,7 +81,15 @@ def token_usage(project: dict | None, on: str) -> dict:
     prefixes = [str(w) for w in worktree_roots(Path(project["root"]))] if project else []
     tot = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "turns": 0}
     for f in TRANSCRIPTS.glob("*/*.jsonl"):
-        if datetime.fromtimestamp(f.stat().st_mtime).date() < date.fromisoformat(on):
+        # Every live session writes into this directory, and `collect` runs at the end of
+        # the day while some of them are still open. A file rotated away between the glob
+        # and the stat took the whole command down with it -- `f.open` was already guarded
+        # against exactly that, one line further on.
+        try:
+            stale = datetime.fromtimestamp(f.stat().st_mtime).date() < date.fromisoformat(on)
+        except OSError:
+            continue
+        if stale:
             continue
         try:
             fh = f.open(errors="replace")
@@ -100,7 +108,12 @@ def token_usage(project: dict | None, on: str) -> dict:
                 if not ts or _local_day(ts) != on:
                     continue
                 cwd = str(d.get("cwd", ""))
-                if prefixes and not any(cwd.startswith(x) for x in prefixes):
+                # Compared as a path, not as a string. A raw `startswith` charges
+                # `/w/alpha-ios` to a project rooted at `/w/alpha` -- and a suffixed
+                # sibling is how these directories are normally named, so the two
+                # projects' token counts silently merge into one of them.
+                if prefixes and not any(cwd == x or cwd.startswith(x + os.sep)
+                                        for x in prefixes):
                     continue
                 u = (d.get("message") or {}).get("usage") or {}
                 tot["in"] += u.get("input_tokens", 0)

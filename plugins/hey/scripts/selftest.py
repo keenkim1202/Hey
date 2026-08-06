@@ -421,6 +421,46 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
         assert b._w(b.INDENT + line) <= b.WIDTH, (want, b._w(b.INDENT + line), line)
 """
 
+TOKEN_SCOPE_PROBE = """
+import json, os, sys; sys.path.insert(0, {here!r})
+from datetime import datetime, timezone
+from pathlib import Path
+import board as b
+
+home = Path(os.environ['HEY_HOME'])
+tdir = home / 'transcripts' / 'a-session'
+tdir.mkdir(parents=True, exist_ok=True)
+# Two projects, one of whose paths is a character-for-character prefix of the other. That
+# is not a contrived case: `alpha` and `alpha-ios` is how these get named.
+proj, sibling = home / 'alpha', home / 'alpha-ios'
+proj.mkdir(exist_ok=True)
+sibling.mkdir(exist_ok=True)
+
+stamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+day = datetime.now().date().isoformat()
+rows = [{{'timestamp': stamp, 'cwd': str(proj),
+          'message': {{'usage': {{'output_tokens': 10}}}}}},
+        {{'timestamp': stamp, 'cwd': str(sibling),
+          'message': {{'usage': {{'output_tokens': 500}}}}}}]
+(tdir / 'one.jsonl').write_text(chr(10).join(json.dumps(r) for r in rows) + chr(10))
+
+b.TRANSCRIPTS = home / 'transcripts'
+got = b.token_usage({{'root': str(proj)}}, day)
+# Matching on a raw string prefix charged the sibling's 500 tokens to this project.
+assert got['out'] == 10, got
+assert got['turns'] == 1, got
+# And the sibling still gets its own, so the fix is a boundary and not a narrowing.
+assert b.token_usage({{'root': str(sibling)}}, day)['out'] == 500
+
+# A path the glob yields but the stat cannot resolve must not take the command down. Every
+# live session writes into this directory while `collect` reads it, so a file rotated away
+# in between is ordinary -- and `f.open` was already guarded against exactly this, one line
+# further on. A dangling symlink reproduces it without racing anything: `glob` lists it by
+# name and `stat` then raises `FileNotFoundError`.
+(tdir / 'dangling.jsonl').symlink_to(home / 'never-existed.jsonl')
+assert b.token_usage({{'root': str(proj)}}, day)['out'] == 10
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -697,6 +737,8 @@ def main() -> int:
         "leaderboard: zero days count toward the average": BOARD_AVG_PROBE.format(
             here=str(HERE)),
         "every rendered card row fits the card": CARD_FIT_PROBE.format(here=str(HERE)),
+        "tokens are charged to a project by path, not by string prefix":
+            TOKEN_SCOPE_PROBE.format(here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
