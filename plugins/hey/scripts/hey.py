@@ -1582,6 +1582,32 @@ def cmd_batch(args, cfg):
             print("    none - by item text these can run in parallel")
 
 
+def match_marker(keys, marker: str) -> tuple:
+    """(the one key this marker names, the candidates when it names several).
+
+    Exactly one of the two is ever non-empty. A marker cannot carry a whole key: the
+    pattern that finds it stops at whitespace and every key holds a title, so `closes
+    P0|First item` arrives here as `P0|First`. Matching on a fragment is therefore the
+    design, not a shortcut -- and a fragment that fits several items is the cost of it.
+
+    Taking the first fit silently was the problem. `closes P0` fits every item in the
+    phase, and the report named one of them, chosen by whichever order the dict happened
+    to be in. `item` already refuses to guess in exactly this situation and lists what it
+    found; this does the same.
+
+    An exact key still wins outright, so a marker that is also a fragment of longer keys
+    resolves rather than reading as ambiguous.
+
+    The old test was `marker in k or k.endswith(marker)`. The second half cannot be true
+    while the first is false, so it selected nothing extra -- it only suggested there was a
+    suffix case being handled, and there is not.
+    """
+    if marker in keys:
+        return marker, []
+    hits = sorted(k for k in keys if marker in k)
+    return (hits[0], []) if len(hits) == 1 else (None, hits)
+
+
 def cmd_pr_sync(args, cfg):
     """Collect `closes <item key>` markers from merged PR bodies. Never checks anything off."""
     for p, led in _each(args, cfg):
@@ -1601,11 +1627,18 @@ def cmd_pr_sync(args, cfg):
             print(f"[{p['name']}] #{pr['number']} {pr['title']}"
                   f"  ({(pr.get('mergedAt') or '')[:10]})")
             for m in marks:
-                hit = next((k for k in keys if m in k or k.endswith(m)), None)
+                hit, ambiguous = match_marker(keys, m)
                 if hit:
                     state = Ledger.state(keys[hit])
                     flag = "already closed" if state == S.DONE else "still unchecked"
-                    print(f"    {m} → {hit}  [{flag}]")
+                    print(f"    {m} -> {hit}  [{flag}]")
+                elif ambiguous:
+                    print(f"    {m} -> matches {len(ambiguous)} items, so it names none "
+                          f"of them:")
+                    for k in ambiguous[:5]:
+                        print(f"         {k}")
+                    if len(ambiguous) > 5:
+                        print(f"         and {len(ambiguous) - 5} more")
                 else:
                     print(f"    {m} -> not found in ledger")
             found += 1

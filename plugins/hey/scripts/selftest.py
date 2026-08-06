@@ -1124,6 +1124,55 @@ def main() -> int:
     check("code: a commit in the last minute of the day is counted on that day",
           code == 0, out)
 
+    # `pr-sync` was the one command with no coverage at all, because it shells out to `gh`
+    # and CI has no authenticated one. A stub on PATH is what makes it testable anywhere:
+    # it answers `pr list` with a fixed body and fails on anything else, so the test also
+    # pins the shape of the call.
+    #
+    # The body carries one marker of each kind. Note what `closes P0|First item` becomes:
+    # the pattern stops at whitespace, so the marker arrives as `P0|First`. Matching on a
+    # fragment is the design, and `closes P0` fitting five items is the cost of it.
+    fakebin = tmp / "fakebin"
+    fakebin.mkdir()
+    gh_stub = fakebin / "gh"
+    gh_stub.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then\n'
+        "  cat <<'JSON'\n"
+        '[{"number": 42, "title": "wire up alpha",'
+        ' "body": "closes P0|First item\\ncloses P0\\ncloses P9|Nope",'
+        ' "mergedAt": "2026-08-05T10:00:00Z"}]\n'
+        "JSON\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n")
+    gh_stub.chmod(0o755)
+    gh_env = {**env, "PATH": f"{fakebin}{os.pathsep}{env.get('PATH', '')}"}
+
+    code, out = run([hey, "pr-sync", "--project", "fixture"], gh_env, proj)
+    check("pr-sync: reads merged PRs and resolves an unambiguous marker",
+          code == 0 and "P0|First -> P0|First item" in out, out)
+    check("pr-sync: says whether the item it resolved to is still open",
+          "still unchecked" in out, out)
+    # The bug: `P0` fits every item in the phase, and the report used to name one of them,
+    # picked by whichever order the dict happened to be in.
+    check("pr-sync: an ambiguous marker names none of them, and lists what it fits",
+          "matches 5 items" in out and "P0|Groundwork" in out, out)
+    check("pr-sync: a marker matching nothing says so",
+          "P9|Nope -> not found in ledger" in out, out)
+    # `_sh` swallows a failed `gh`, so an empty result has to be reported rather than read
+    # as "no markers found". Its own stub, rather than whatever `gh` the machine happens to
+    # have: leaning on the ambient one makes this pass for a reason that is not the one
+    # being tested, and pass differently on a machine where `gh` is missing entirely.
+    brokenbin = tmp / "fakebin-broken"
+    brokenbin.mkdir()
+    (brokenbin / "gh").write_text("#!/bin/sh\nexit 1\n")
+    (brokenbin / "gh").chmod(0o755)
+    broken_env = {**env, "PATH": f"{brokenbin}{os.pathsep}{env.get('PATH', '')}"}
+    code, out = run([hey, "pr-sync", "--project", "fixture"], broken_env, proj)
+    check("pr-sync: a gh that cannot answer is reported, not read as zero markers",
+          code == 0 and "could not read PRs via gh" in out, out)
+
     for label, detail in failed:
         print(f"\n--- {label} ---\n{detail}")
     if args.keep:
