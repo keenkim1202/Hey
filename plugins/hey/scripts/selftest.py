@@ -713,6 +713,30 @@ def main() -> int:
     code, out = run(hook, hook_env, tmp)
     check("hook: silent outside a registered project", code == 0 and not out.strip(), out)
 
+    # `dirty` prints one block per project in scope, and its all-clear is itself a line
+    # reading "nothing uncommitted or unpushed". The scope was set to `all` a few cases
+    # back, so with a clean project registered alongside the dirty fixture, a hook that
+    # decides with `"nothing uncommitted" in text` goes silent about work at risk. A fresh
+    # clone of the fixture's own origin is the clean project: real repository, tracked
+    # branch, nothing outstanding.
+    clean = tmp / "clean-project"
+    subprocess.run(["git", "clone", "-q", str(origin), str(clean)],
+                   env=env, capture_output=True, text=True)
+    # Excluded first: the ledger is local state, and left untracked it is itself a dirty
+    # working tree -- which would make this "clean" project report work at risk and quietly
+    # turn the check below into one that passes for the wrong reason.
+    (clean / ".git" / "info").mkdir(parents=True, exist_ok=True)
+    (clean / ".git" / "info" / "exclude").write_text("TASKS.local.md\n")
+    (clean / "TASKS.local.md").write_text(LEDGER.format(today=today))
+    run([hey, "add", str(clean), "--name", "clean"], env, proj)
+    code, out = run([hey, "dirty"], env, proj)
+    check("dirty: the clean project really does report the all-clear line",
+          "nothing uncommitted or unpushed" in out, out)
+    code, out = run(hook, hook_env, proj)
+    check("hook: a clean project elsewhere does not silence the dirty one",
+          "neither committed nor pushed" in out, out)
+    run([hey, "remove", "clean"], env, proj)
+
     # One project is one repository, so a linked worktree must not register on its own.
     code, out = run([hey, "add", str(side), "--name", "wt"], env, proj)
     check("add: refuses a linked worktree", code != 0 and "linked worktree" in out, out)
