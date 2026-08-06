@@ -276,6 +276,13 @@ flattering number.
 - **Estimates go on the top-level item line only**, as `N MD / AI M`. A subitem never
   carries an estimate of its own, but it can claim a share of its item's with `[AI n]`,
   for the cases where splitting the estimate evenly across the boxes would lie
+- **A blocker can carry its own start date** — `[since 2026-07-31]`, or `[since unknown]`
+  when it cannot be found. The card then shows how long it has waited from day one, instead
+  of waiting for enough recorded days to infer it. `hey.py blockers` lists them all, oldest
+  first, which is what the card points at when it runs out of room
+- **An item can name the branch its work lives on** — `[branch feat/toc-anchors]`, on the
+  item or on the subitem that becomes that branch. Loose work then reads as an item rather
+  than a directory, and `doctor` reports a marker whose branch git no longer has
 - A box is `[ ]`, `[x]` or `[X]`. Anything else is not a box and is counted nowhere
 - Several projects can run at once. `scope current` is the one you are standing in,
   `scope all` is every registered project
