@@ -786,7 +786,9 @@ def main() -> None:
 
     sp = add("show", cmd_show, help="leaderboard")
     sp.add_argument("--date")
-    sp.add_argument("--window", type=int, default=14)
+    sp.add_argument("--window", type=int, default=14,
+                    help="how many calendar days back to include. Calendar days, not "
+                         "records - `hey.py rank --window` counts records")
     sp.add_argument("--top", type=int, default=6)
     sp.add_argument("--metric", choices=list(METRICS), default="ai")
 

@@ -461,6 +461,59 @@ assert b.token_usage({{'root': str(sibling)}}, day)['out'] == 500
 assert b.token_usage({{'root': str(proj)}}, day)['out'] == 10
 """
 
+RANK_POOL_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from hey import rank_pool
+
+rows = [{{'date': '2026-01-0%d' % n, 'earned_ai': float(n)}} for n in (1, 2, 3, 4)]
+
+# A past day is ranked against the days before it, not against everything on record. The
+# other way round, that day's rank drifts every time a later day is recorded -- so a rank
+# quoted on Tuesday means something different by Friday.
+assert [r['date'] for r in rank_pool(rows, '2026-01-02', 10)] == \\
+    ['2026-01-01', '2026-01-02'], rank_pool(rows, '2026-01-02', 10)
+
+# The window counts records and takes the most recent of them, which is the difference
+# from `board.py show --window`, where it counts calendar days.
+assert [r['date'] for r in rank_pool(rows, '2026-01-04', 2)] == \\
+    ['2026-01-02', '2026-01-03', '2026-01-04'], rank_pool(rows, '2026-01-04', 2)
+
+# The day itself is always in the pool. Leaving it out is what produced "#5 of 4".
+assert [r['date'] for r in rank_pool(rows, '2026-01-01', 10)] == ['2026-01-01']
+# And a day with no record of its own yields a pool the caller can see is missing it.
+assert [r['date'] for r in rank_pool(rows, '2026-01-09', 10)] == \\
+    ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04']
+"""
+
+AGE_MARK_PROBE = """
+import sys, unicodedata; sys.path.insert(0, {here!r})
+from hey import _blocker_age, display_width
+
+# The age column is right-aligned, so a glyph that measures one column and draws two shifts
+# every row under it -- in a CJK terminal only, which is where this plugin is mostly used.
+# `strings.MARK` documents the same trap for the section glyphs and the self-test enforces
+# it there; the marks in this column had never been held to it, and the em dash that used
+# to mean "no start recorded" is East Asian Width `A` exactly like the arrow.
+states = [
+    {{'days': 3, 'bad_since': False, 'since': '2020-01-01'}},   # a real age
+    {{'days': 9999, 'bad_since': False, 'since': '1998-01-01'}},  # 27 years, still fits
+    {{'days': None, 'bad_since': True, 'since': '2020-13-45'}},  # not a date
+    {{'days': None, 'bad_since': False, 'since': 'unknown'}},    # settled
+    {{'days': None, 'bad_since': False, 'since': '2099-01-01'}},  # not started
+    {{'days': None, 'bad_since': False, 'since': None}},         # never asked
+]
+marks = [_blocker_age(s)[0] for s in states]
+# Every state has to look different, or the column says nothing.
+assert len(set(marks)) == len(marks), marks
+for mark in marks:
+    for ch in mark:
+        eaw = unicodedata.east_asian_width(ch)
+        assert eaw in ('Na', 'N', 'H'), (mark, ch, eaw)
+    assert display_width(mark) == len(mark), (mark, display_width(mark))
+    # And fit the column it is padded into, which `9999d` reaches exactly.
+    assert len(mark) <= 5, mark
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -734,6 +787,10 @@ def main() -> int:
         "split ledger: prose in a second file": SPLIT_PROBE.format(here=str(HERE)),
         "titles and clipping": TITLE_CLIP_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
+        "blocker age marks are distinct and never draw wide":
+            AGE_MARK_PROBE.format(here=str(HERE)),
+        "rank: a past day is ranked against earlier days only":
+            RANK_POOL_PROBE.format(here=str(HERE)),
         "leaderboard: zero days count toward the average": BOARD_AVG_PROBE.format(
             here=str(HERE)),
         "every rendered card row fits the card": CARD_FIT_PROBE.format(here=str(HERE)),
@@ -770,6 +827,11 @@ def main() -> int:
         ([board, "collect", "--date", two_days_ago], "collect: a past day keeps its hands off "
          "box state", "not collected - a later day is already recorded"),
         ([hey, "rank"], "rank"),
+        # `--window` counts records here and calendar days in `board.py show`, both named
+        # the same and both defaulting to 14. Naming the span is what stops the two
+        # commands reading as answers about the same stretch of time.
+        ([hey, "rank"], "rank: names the span it ranked inside", "ranked against records "
+         "back to"),
         ([hey, "carryover", "--days", "1"], "carry-over"),
         # The blocker is dated 2020 on its own line, and the fixture has two days of
         # history. Reading the age off the records would call it a day or two old; the

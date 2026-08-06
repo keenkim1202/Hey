@@ -1153,8 +1153,30 @@ def cmd_snapshot(args, cfg):
                   f"Closed today: {snap['earned_ai']} AI-days {boxes}")
 
 
+def rank_pool(rows: list[dict], on: str, window: int) -> list[dict]:
+    """The records `on` is ranked inside: itself, plus up to `window` earlier ones.
+
+    Earlier only. `--date <a past day>` used to rank that day against everything else on
+    record, later days included, which answers a different question from the one the
+    command's name asks -- and makes a past day's rank drift every time another day is
+    recorded after it. A rank you can quote should not change behind you.
+
+    Pulled out of `cmd_rank` so the selection can be tested without a fixture's worth of
+    recorded history behind it.
+    """
+    past = [r for r in rows if r["date"] < on]
+    return past[-window:] + [r for r in rows if r["date"] == on]
+
+
 def cmd_rank(args, cfg):
-    """Today ranked against your own past records. Never against other people."""
+    """Today ranked against your own past records. Never against other people.
+
+    `--window` here is a count of records, where `board.py show --window` is a count of
+    calendar days. Both are called `--window` and both default to 14, so the two commands
+    answer for different stretches of time and neither used to say which. A project worked
+    on twice a month ranks today against six months of records while the board covers a
+    fortnight -- so the span this ranked inside is printed alongside the result.
+    """
     on = args.date or today_str()
     for p, _ in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"] and "earned_ai" in r]
@@ -1162,18 +1184,20 @@ def cmd_rank(args, cfg):
             need_history(p["name"], "ranking today against your past", len(rows), 1)
             continue
         today = next((r for r in rows if r["date"] == on), None)
-        past = [r for r in rows if r["date"] != on]
         if today is None:
             print(f"[{p['name']}] no snapshot for {on}. Run `hey.py snapshot` first")
             continue
-        # Ranked inside a pool that includes today. Excluding today gives "#5 of 4".
-        pool = past[-args.window:] + [today]
+        # The pool includes the day itself. Excluding it gives "#5 of 4".
+        pool = rank_pool(rows, on, args.window)
         ranked = sorted(pool, key=lambda r: (-r["earned_ai"], r["date"]))
         rank = next(i + 1 for i, r in enumerate(ranked) if r["date"] == on)
         avg = round(sum(r["earned_ai"] for r in pool) / len(pool), 3)
         best = ranked[0]["earned_ai"]
+        span = min(r["date"] for r in pool)
         print(f"[{p['name']}] today {today['earned_ai']} AI-days — "
               f"#{rank} of {len(pool)} recorded days (avg {avg} · best {best})")
+        print(f"  ranked against records back to {span}, not against a fixed "
+              f"number of calendar days")
         # A day that closed nothing is not a personal best, even when every recorded day
         # closed nothing. The ledger's own rule is that a zero is reported as a zero.
         if today["earned_ai"] and today["earned_ai"] >= best:
@@ -1385,9 +1409,10 @@ def _blocker_age(b: dict) -> tuple[str, str | None]:
     all is a question nobody has asked yet. One dash for all four made the last three
     indistinguishable from each other on the one screen where you go to triage them.
 
-    The marks are ASCII on purpose. This column is right-aligned, and an arrow or a bullet
-    is East Asian Width `A` -- one column by measurement, two as drawn in a CJK terminal,
-    which is the same trap `strings.MARK` documents for the section glyphs.
+    The marks are ASCII on purpose. This column is right-aligned, and an arrow, a bullet or
+    an em dash is East Asian Width `A` -- one column by measurement, two as drawn in a CJK
+    terminal, which is the same trap `strings.MARK` documents for the section glyphs. The
+    self-test holds every mark this can return to that rule.
     """
     if b["days"] is not None:
         return f'{b["days"]}d', None
@@ -1397,7 +1422,7 @@ def _blocker_age(b: dict) -> tuple[str, str | None]:
         return "?", "the start could not be found, and that is a settled answer"
     if b["since"]:
         return ">", "dated ahead of today, so the wait has not started"
-    return "—", "no start recorded. Add `[since YYYY-MM-DD]`, or `[since unknown]`"
+    return "-", "no start recorded. Add `[since YYYY-MM-DD]`, or `[since unknown]`"
 
 
 def cmd_blockers(args, cfg):
@@ -1712,7 +1737,9 @@ def main() -> None:
     sp.add_argument("--date")
     sp = scoped(add("rank", cmd_rank, help="today ranked against your own past"))
     sp.add_argument("--date")
-    sp.add_argument("--window", type=int, default=14)
+    sp.add_argument("--window", type=int, default=14,
+                    help="how many past records to rank against. Records, not calendar "
+                         "days - `board.py show --window` counts calendar days")
     sp = scoped(add("carryover", cmd_carryover, help="carried-over items and aged blockers"))
     sp.add_argument("--days", type=int, default=3,
                     help="threshold: consecutive recorded days for carried-over items, "
