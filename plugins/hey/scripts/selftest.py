@@ -724,6 +724,15 @@ def main() -> int:
           code == 0 and "created from template" in out, out)
     check("add --init: ledger is on disk", (second / "TASKS.local.md").exists(),
           f"{second / 'TASKS.local.md'} was not written")
+    # The template is the first ledger a new user ever sees, and `doctor` is the first thing
+    # they are told to run. A heading the template spells differently from the one the
+    # scripts look for greets them with a warning about a file they have not touched yet.
+    # Sliced to this project's block so it is the template being judged, not the fixture --
+    # and it covers whichever template the active language picks.
+    code, out = run([hey, "doctor"], env, proj)
+    block = out.split("project second\n", 1)[-1].split("\nproject ", 1)[0].split("\nhistory", 1)[0]
+    check("add --init: the template satisfies every section doctor looks for",
+          "project second\n" in out and "heading" not in block, block)
     code, out = run([hey, "remove", "second"], env, proj)
     check("remove: unregisters and keeps the ledger",
           code == 0 and "unregistered: second" in out, out)
@@ -796,6 +805,34 @@ def main() -> int:
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: flags a base the working branch has left behind",
           "If `develop` is what work merges into" in out, out)
+
+    # `note` writes into whichever half holds the notes heading, and with the halves split
+    # that is the companion -- writing to the primary would file the note where nothing
+    # reads it back. `SPLIT_PROBE` covers the read side; this is the only thing anywhere
+    # that writes to a split ledger. Registered last because it changes what is in scope,
+    # and the scope was set to `all` well before this point.
+    split = tmp / "split-ledger"
+    split.mkdir()
+    primary = split / "TASKS.local.md"
+    companion = split / "TASKS.log.local.md"
+    primary.write_text("## P0. Phase (1 MD / AI 0.5)\n\n"
+                       "- [ ] **Only item** -- 1 MD / AI 0.5\n")
+    companion.write_text("## Notes\n\nNewest first.\n\n---\n\n## Work log\n")
+    untouched = primary.read_text()
+    code, out = run([hey, "add", str(split), "--name", "split", "--ledger", str(primary),
+                     "--ledger-log", str(companion)], env, proj)
+    check("add: registers a split ledger", code == 0 and "log:" in out, out)
+    code, out = run([hey, "note", "first note", "--project", "split"], env, proj)
+    check("note: a split ledger takes the note in the companion",
+          code == 0 and "first note" in companion.read_text(), out)
+    check("note: the checklist half is left untouched",
+          primary.read_text() == untouched, primary.read_text())
+    code, out = run([hey, "note", "second note", "--project", "split"], env, proj)
+    body = companion.read_text()
+    # A second note the same day belongs under the heading already there. Opening a new one
+    # splits the day in two, and `notes` reads them back per date.
+    check("note: a second note the same day joins today's heading",
+          body.count(f"### {today}") == 1 and "second note" in body, body)
 
     for label, detail in failed:
         print(f"\n--- {label} ---\n{detail}")
