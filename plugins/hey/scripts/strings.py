@@ -74,7 +74,11 @@ CARD = {
         "uncommitted": "{n} uncommitted",
         "board_none": "{label}  no records yet", "board_today": "Today  {label} {val}",
         "board_rank": "#{rank} of last {n} days", "board_window": "last {n} days on record",
-        "board_peak": "  peak", "board_is_today": "  <- today", "board_avg": "avg",
+        "board_peak": "  peak", "board_is_today": "  <- today",
+        # The rows above are the days that produced something; this covers every day that
+        # was measured, zeros included. Different populations, so it carries its own count.
+        "board_avg": "avg of {n}",
+        "board_all_zero": "all {n} recorded days are zero",
         "board_first": "#1",
     },
     "ko": {
@@ -98,7 +102,9 @@ CARD = {
         "uncommitted": "미커밋 {n}개",
         "board_none": "{label}  기록이 없다", "board_today": "오늘  {label} {val}",
         "board_rank": "최근 {n}일 중 {rank}위", "board_window": "최근 {n}일 기록",
-        "board_peak": "  최고", "board_is_today": "  <- 오늘", "board_avg": "평균",
+        "board_peak": "  최고", "board_is_today": "  <- 오늘",
+        "board_avg": "{n}일 평균",
+        "board_all_zero": "기록된 {n}일이 모두 0",
         "board_first": "1등",
     },
 }

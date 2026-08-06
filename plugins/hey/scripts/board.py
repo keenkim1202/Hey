@@ -140,10 +140,18 @@ LANG = S.lang(load_config())
 _L = S.METRIC_LABELS[LANG]
 _U = S.UNITS[LANG]
 
+# (label, value, format, was it measured at all). The fourth is not the same question as
+# "is the value zero", and reading a zero as an answer to it is what let a day nothing was
+# measured on count as a day that produced nothing -- and, the other way round, let a
+# recorded zero drop out of the average that is supposed to include it. A baseline day
+# carries no `earned_ai`; a day collected before `code` existed carries no `code`.
 METRICS = {
-    "ai": (_L["ai"], lambda r: r.get("earned_ai", 0.0), lambda v: f"{v:.2f}{_U['aid']}"),
-    "code": (_L["code"], total_code, lambda v: f"{int(v):,}{_U['lines']}"),
-    "tokens": (_L["tokens"], total_tokens, lambda v: f"{human_tokens(v)}{_U['tok']}"),
+    "ai": (_L["ai"], lambda r: r.get("earned_ai", 0.0), lambda v: f"{v:.2f}{_U['aid']}",
+           lambda r: "earned_ai" in r),
+    "code": (_L["code"], total_code, lambda v: f"{int(v):,}{_U['lines']}",
+             lambda r: r.get("code") is not None),
+    "tokens": (_L["tokens"], total_tokens, lambda v: f"{human_tokens(v)}{_U['tok']}",
+               lambda r: r.get("tokens") is not None),
 }
 
 
@@ -230,14 +238,35 @@ def flair(kind: str, on: str, **kw) -> str:
 
 
 def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]:
-    label, get, fmt = METRICS[metric]
-    scored = [(r["date"], get(r)) for r in rows if get(r)]
-    if not scored:
+    """The ranked days, and where today sits among them.
+
+    Two populations, deliberately. The **bars** are the days that produced something: a
+    zero-height row carries no information and only costs a line. The **average** is every
+    day that was measured, zeros included -- leaving them out prints a figure the reader
+    is being invited to compare their day against, computed by discarding the days that
+    would have dragged it down. The row says how many days it covers, because it is not
+    the same count as the rows above it.
+    """
+    label, get, fmt, has = METRICS[metric]
+    # Measured first, produced second. Everything that decides *whether there is anything
+    # to say* keys off the measured days; only the bars key off the ones that produced.
+    measured = [(r["date"], get(r)) for r in rows if has(r)]
+    if not measured:
         return [S.card("board_none", LANG, label=label)]
-    today_val = next((v for d, v in scored if d == on), None)
+    scored = [(d, v) for d, v in measured if v]
+    # From the measured days: a day recorded as zero has an answer, and printing `-` for it
+    # says the opposite -- that nothing was recorded at all.
+    today_val = next((v for d, v in measured if d == on), None)
+    avg = sum(v for _, v in measured) / len(measured)
+    if not scored:
+        # Every measured day is zero. There are records, so claiming there are none is the
+        # same conflation this function exists to avoid -- but there is nothing to rank and
+        # no bar to draw, so the board collapses to the one statement that is true.
+        opening = S.card("board_today", LANG, label=label,
+                         val=fmt(today_val) if today_val is not None else "-")
+        return [f"{pad(opening, 28)}{S.card('board_all_zero', LANG, n=len(measured))}"]
     ranked = sorted(scored, key=lambda x: (-x[1], x[0]))
     peak = ranked[0][1]
-    avg = sum(v for _, v in scored) / len(scored)
     rank = next((i + 1 for i, (d, _) in enumerate(ranked) if d == on), None)
 
     shown_val = fmt(today_val) if today_val is not None else "-"
@@ -256,8 +285,12 @@ def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]
     # The avg row has no rank or date, so its label is padded to whatever those occupy on
     # the rows above. A fixed width drifts the moment the date format changes language.
     lead = _w(f"{1:2}  {short_date(shown[0][0])}  ") - 4
-    out.append(f"{'':4}{pad(S.card('board_avg', LANG), lead)}{bar(avg, peak):<{BAR_W}}  {rpad(fmt(avg), 12)}")
-    if today_val is None:
+    out.append(f"{'':4}{pad(S.card('board_avg', LANG, n=len(measured)), lead)}"
+               f"{bar(avg, peak):<{BAR_W}}  {rpad(fmt(avg), 12)}")
+    # No value, or a measured zero. Neither is a day to compare against the peak: the
+    # shortfall lines would read as a near miss, and a zero day gets its own line from the
+    # caller. `board_none` already covered the case where nothing at all was recorded.
+    if not today_val:
         return out
     out.append("")
     if today_val >= peak:
@@ -279,15 +312,18 @@ def cmd_show(args, cfg):
         print(f"[{p['name']}]")
         for ln in leaderboard(rows, on, args.metric, args.top):
             print(f"  {ln}" if ln else "")
-        # A recorded-but-zero day never appears on the board, so say so explicitly.
+        # A recorded-but-zero day never gets a bar, so say so explicitly. Only when the day
+        # was actually measured: a baseline carries no closed-work figure at all, and
+        # calling that a zero credits the day with a result nobody recorded.
         today_row = next((r for r in rows if r["date"] == on), None)
-        if today_row and not METRICS[args.metric][1](today_row):
+        _, get, _, has = METRICS[args.metric]
+        if today_row and has(today_row) and not get(today_row):
             print()
             print(f"  {flair('zero', on) if args.metric == 'ai' else 'Zero for today.'}")
         if args.metric == "ai":
             print()
             for m in ("code", "tokens"):
-                label, get, fmt = METRICS[m]
+                label, get, fmt, _ = METRICS[m]
                 scored = [(r["date"], get(r)) for r in rows if get(r)]
                 if not scored:
                     continue
@@ -651,7 +687,7 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     if win:
         out += section("results", f'{S.card("results", LANG)}  {short_date(focus)}')
         for m in ("ai", "code", "tokens"):
-            lbl, get, f = METRICS[m]
+            lbl, get, f, _ = METRICS[m]
             scored = [(r["date"], get(r)) for r in win if get(r)]
             mine = next((v for d_, v in scored if d_ == focus), 0)
             best = max(scored, key=lambda x: x[1]) if scored else None

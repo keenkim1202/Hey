@@ -332,6 +332,54 @@ gone = Ledger({{'name': 'x', 'ledger': str(main), 'ledger_log': str(tmp / 'nope.
 assert gone.log_path is None and gone.log_days() == []
 """
 
+BOARD_AVG_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+import board as b
+
+# Four days. One baseline, which carries no `earned_ai` at all -- nothing was measured on
+# it, which is not the same as measuring zero. Two that produced, and one recorded as a
+# genuine zero: worked, closed nothing.
+rows = [{{'date': '2026-01-01', 'project': 'x'}},
+        {{'date': '2026-01-02', 'project': 'x', 'earned_ai': 1.0}},
+        {{'date': '2026-01-03', 'project': 'x', 'earned_ai': 0.0}},
+        {{'date': '2026-01-04', 'project': 'x', 'earned_ai': 0.5}}]
+
+# The average covers every measured day -- 1.0, 0.0, 0.5 -> 0.50. Dropping the recorded
+# zero gives 0.75, which is a figure the reader is invited to compare their day against,
+# arrived at by discarding the days that would have pulled it down.
+out = chr(10).join(b.leaderboard(rows, '2026-01-04', 'ai', 6))
+assert '0.75' not in out, out
+avg_row = [ln for ln in out.split(chr(10)) if ln.startswith('    ') and '0.50' in ln]
+assert avg_row, out
+# The baseline is excluded from the count, so three days, not four.
+assert '3' in avg_row[0], avg_row[0]
+
+# A day recorded as zero has an answer, and the header has to print it. `-` is what the
+# header says when there is no record at all, and the two must not read alike.
+zero = chr(10).join(b.leaderboard(rows, '2026-01-03', 'ai', 6))
+assert '0.00' in zero.split(chr(10))[0], zero.split(chr(10))[0]
+# It is still not a near miss on the record, so no shortfall line is drawn for it.
+assert not any(ln.strip().startswith(('0.', '1.')) and 'AI' not in ln
+               for ln in zero.split(chr(10))[-1:]), zero
+
+# A baseline day has nothing to report, and must not be dressed up as a zero.
+base = chr(10).join(b.leaderboard(rows, '2026-01-01', 'ai', 6))
+assert '-' in base.split(chr(10))[0], base.split(chr(10))[0]
+
+# A window where every measured day is zero has records -- they just all say zero. Reading
+# the empty state off the days that *produced* something reports it as "no records yet",
+# which is the same conflation the rest of this probe is about. There is nothing to rank
+# and no bar to draw, so one line, and it has to carry today's figure and the count.
+flat = [{{'date': '2026-02-0%d' % n, 'project': 'x', 'earned_ai': 0.0}} for n in (1, 2, 3)]
+out = chr(10).join(b.leaderboard(flat, '2026-02-02', 'ai', 6))
+assert '0.00' in out, out
+assert '3' in out, out
+# And a window with no measurement at all still says exactly that.
+none = chr(10).join(b.leaderboard([{{'date': '2026-03-01', 'project': 'x'}}],
+                                  '2026-03-01', 'ai', 6))
+assert '0.00' not in none, none
+"""
+
 BLOCKER_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import strings as s
@@ -599,6 +647,8 @@ def main() -> int:
         "split ledger: prose in a second file": SPLIT_PROBE.format(here=str(HERE)),
         "titles and clipping": TITLE_CLIP_PROBE.format(here=str(HERE)),
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
+        "leaderboard: zero days count toward the average": BOARD_AVG_PROBE.format(
+            here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
