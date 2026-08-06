@@ -540,20 +540,29 @@ class Ledger:
             in_text = S.blocker_hit(it["text"])
             if in_section or in_text:
                 m = self.SINCE.search(it["text"])
-                days = None
-                if m and m[1] != "unknown":
+                raw = m[1] if m else None
+                days, bad = None, False
+                if raw and raw != "unknown":
                     try:
-                        days = (date.fromisoformat(today) - date.fromisoformat(m[1])).days
+                        days = (date.fromisoformat(today) - date.fromisoformat(raw)).days
                     except ValueError:
-                        days = None
+                        # The pattern only checks the shape, so `2026-13-45` reaches here.
+                        # Reported rather than swallowed: it looks answered on the line but
+                        # yields no age, so nothing would ever prompt anyone to fix it.
+                        bad = True
+                    else:
+                        # A date in the future is a real date, not a typo. It has no age,
+                        # and reporting a negative wait would be worse than reporting none.
+                        days = days if days >= 0 else None
                 # The title is a key first, and a key that reads well is a coincidence.
                 # The listing wants the line as written, minus the markup and the markers.
                 shown = self.MARKERS.sub("", it["text"]).replace("**", "").replace("`", "")
                 out.append({"key": self.key(it), "title": it["title"],
                             "shown": " ".join(shown.split()),
                             "section": it["section"],
-                            "since": m[1] if m else None,
-                            "days": days if days is None or days >= 0 else None})
+                            "since": raw,
+                            "bad_since": bad,
+                            "days": days})
         return out
 
     def item_for_branch(self, branch: str) -> dict | None:
@@ -1008,6 +1017,15 @@ def cmd_doctor(args, cfg):
                                 f"does not have: {', '.join(stale[:3])}")
                 else:
                     ok(f"{len(markers)} branch marker(s), all resolvable")
+            # `[since 2026-13-45]` matches the marker's shape and then fails to parse, so
+            # the age silently reads as "none" while the line looks answered -- it is also
+            # excluded from the `blockers` hint that chases undated ones. Nothing else in
+            # the tool would ever surface the typo.
+            bad_since = [b for b in ledger.blockers() if b["bad_since"]]
+            if bad_since:
+                say("warn", f"{len(bad_since)} `[since ...]` marker(s) are not a real date, "
+                            f"so those blockers have no age: "
+                            f"{', '.join(b['title'] for b in bad_since[:3])}")
             over = [i for i in ledger.items if Ledger.overclaimed(i)]
             if over:
                 worst = max(over, key=Ledger.overclaimed)
@@ -1141,14 +1159,40 @@ def cmd_carryover(args, cfg):
                 streak[k] = streak.get(k, 0) + 1
         stale = sorted(((k, n) for k, n in streak.items() if n >= args.days),
                        key=lambda x: -x[1])
+        as_of = rows[-1]["date"]
         first_seen: dict[str, str] = {}
         for r in rows:
             for k in r.get("blockers", []):
                 first_seen.setdefault(k, r["date"])
-        old = sorted(
-            ((k, (date.fromisoformat(rows[-1]["date"]) - date.fromisoformat(d)).days)
-             for k, d in first_seen.items() if k in rows[-1].get("blockers", [])),
-            key=lambda x: -x[1])
+        # *What* is blocked comes from the ledger, not from the last record: the ledger is
+        # always the more current of the two, and a blocker cleared since the last snapshot
+        # has no business being chased. *How old* it is comes from the line's own `[since]`
+        # when it carries one -- which is the entire reason that marker exists, and reading
+        # it here is what stops `blockers` and `carryover` reporting two different ages for
+        # the same item. Records stay the fallback, so a ledger with no markers is unchanged.
+        #
+        # Both ages are measured to the last recorded day rather than to today. Mixing an
+        # age-as-of-today with an age-as-of-the-last-record in one list would make the two
+        # sources incomparable exactly where they sit side by side.
+        old = []
+        for b in led.blockers(as_of):
+            if b["days"] is not None:
+                old.append((b["key"], b["days"], "ledger"))
+                continue
+            # Three things leave a blocker with no age, and only two of them are a gap the
+            # records may fill. `[since unknown]` says the start could not be found, so a
+            # first-sighting is a useful floor; a malformed date is a typo `doctor` chases
+            # separately. But a real date later than the day being measured is the line
+            # stating that the wait has not begun -- answering that from the records would
+            # override an explicit claim with the opposite one.
+            if b["since"] not in (None, "unknown") and not b["bad_since"]:
+                continue
+            if b["key"] in first_seen:
+                old.append((b["key"], (date.fromisoformat(as_of)
+                                       - date.fromisoformat(first_seen[b["key"]])).days,
+                            "records"))
+        old.sort(key=lambda x: -x[1])
+        aged = [x for x in old if x[1] >= args.days]
         # The unit is **snapshot count**, not calendar days. Days with no snapshot are not counted.
         span = f"{rows[0]['date']} ~ {rows[-1]['date']}"
         print(f"[{p['name']}]  {len(rows)} snapshots ({span})")
@@ -1156,12 +1200,11 @@ def cmd_carryover(args, cfg):
             print(f"  in progress for {args.days}+ consecutive snapshots:")
             for k, n in stale:
                 print(f"    - {k}  ({n} in a row)")
-        if old and old[0][1] >= args.days:
-            print("  long-standing blockers (days since first recorded):")
-            for k, n in old[:8]:
-                if n >= args.days:
-                    print(f"    - {k}  ({n} days)")
-        if not stale and not (old and old[0][1] >= args.days):
+        if aged:
+            print(f"  long-standing blockers (age as of {as_of}):")
+            for k, n, src in aged[:8]:
+                print(f"    - {k}  ({n} days, from the {src})")
+        if not stale and not aged:
             print(f"  nothing stuck for {args.days}+")
 
 
@@ -1610,7 +1653,8 @@ def main() -> None:
     sp.add_argument("--window", type=int, default=14)
     sp = scoped(add("carryover", cmd_carryover, help="carried-over items and aged blockers"))
     sp.add_argument("--days", type=int, default=3,
-                    help="threshold in consecutive recorded days, not calendar days")
+                    help="threshold: consecutive recorded days for carried-over items, "
+                         "calendar days for blocker age")
     scoped(add("variance", cmd_variance, help="estimate vs actual"))
     sp = scoped(add("burndown", cmd_burndown, help="trend of AI-days remaining"))
     sp.add_argument("--days", type=int, default=14)

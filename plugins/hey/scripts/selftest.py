@@ -65,11 +65,14 @@ LEDGER = """# fixture ledger
 - [ ] **Server contract** — backend owns this — **needs decision** `[since 2020-01-01]`
 - [ ] **Legacy quirk** — waiting on someone who left `[since unknown]`
 - [ ] **Fresh doubt** — pending, nobody has dated it
+- [ ] **Mistyped date** — blocked on a date that does not exist `[since 2020-13-45]`
+- [ ] **Not yet** — blocked from a day that has not arrived `[since 2099-01-01]`
 """
 
-# 9 boxes, 4 of them closed. `part two` uses `[X]`, so an implementation that only
-# accepts `[x]` drops it from both halves of that count.
-BOXES = "4/11 boxes"
+# 13 boxes across 10 items, 4 of them closed: five item lines carry subitems or stand
+# alone, and the four blockers are one box each. `part two` uses `[X]`, so an
+# implementation that only accepts `[x]` drops it from both halves of that count.
+BOXES = "4/13 boxes"
 
 WIDTH_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
@@ -235,6 +238,17 @@ assert b['since'] == '2020-01-01', b
 assert b['days'] == 10, b
 # A date in the future is not an age. Reporting a negative wait would be worse than none.
 assert {{x['title']: x for x in led.blockers('2019-01-01')}}['Server contract']['days'] is None
+
+# `[since 2020-13-45]` matches the marker's shape and then fails to parse. That used to read
+# as "no age" while the line looked answered, so nothing anywhere would ever mention it --
+# and it also fell out of the hint that chases undated blockers. It is now its own answer.
+by_t = {{x['title']: x for x in led.blockers('2020-01-11')}}
+assert by_t['Mistyped date']['bad_since'] is True, by_t['Mistyped date']
+assert by_t['Mistyped date']['days'] is None, by_t['Mistyped date']
+# And the well-formed ones must not be swept up with it -- including `unknown`, which is a
+# recorded answer, and the undated one, which is a question nobody has asked yet.
+for t in ('Server contract', 'Legacy quirk', 'Fresh doubt'):
+    assert by_t[t]['bad_since'] is False, (t, by_t[t])
 """
 
 TITLE_CLIP_PROBE = """
@@ -525,6 +539,12 @@ def main() -> int:
          "box state", "not collected - a later day is already recorded"),
         ([hey, "rank"], "rank"),
         ([hey, "carryover", "--days", "1"], "carry-over"),
+        # The blocker is dated 2020 on its own line, and the fixture has two days of
+        # history. Reading the age off the records would call it a day or two old; the
+        # ledger is what knows it has been sitting for years, and both commands have to
+        # agree on that. `from the ledger` is the assertion that the marker won.
+        ([hey, "carryover", "--days", "1"], "carry-over: a dated blocker ages from the ledger",
+         "days, from the ledger"),
         ([hey, "variance"], "variance: settled-earlier item excluded",
          "no item has been seen closing yet"),
         ([hey, "item", "First item"], "item history", "first seen"),
@@ -541,10 +561,12 @@ def main() -> int:
         ([board, "streak"], "streak: uses the project's daily goal", "goal of 0.4"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
-        ([hey, "blockers"], "blockers: lists them all", "3 blocked"),
+        ([hey, "blockers"], "blockers: lists them all", "5 blocked"),
         ([hey, "blockers"], "blockers: nags only about the unanswered ones",
          "1 with no start recorded"),
         ([hey, "doctor"], "doctor"),
+        ([hey, "doctor"], "doctor: flags a `[since]` that is not a real date",
+         "are not a real date"),
         ([hey, "scope", "all"], "scope all"),
     ]
     cases += [(["-c", src], label) for label, src in probes.items()]
@@ -575,7 +597,15 @@ def main() -> int:
     # ones -- three sit in the blocker section, while `Third item` says "depending", which
     # is not `pending` and must not count.
     code, out = run([hey, "batch"], env, proj)
-    check("blocker detection", "3 blocked item(s) excluded" in out, out)
+    check("blocker detection", "5 blocked item(s) excluded" in out, out)
+
+    # A `[since]` naming a day that has not arrived is a deliberate statement that the wait
+    # has not started. The records would happily supply an age -- the item has been sitting
+    # in the fixture's snapshots since the first one -- and using it would answer a question
+    # the line already answered, with the opposite answer.
+    code, out = run([hey, "carryover", "--days", "1"], env, proj)
+    check("carry-over: a future `[since]` is not aged from the records",
+          "Not yet" not in out, out)
 
     # The session-start hook is the only always-on component, and silence is its default.
     # With no stdin it falls back to the cwd, which is what these two cases exercise.
