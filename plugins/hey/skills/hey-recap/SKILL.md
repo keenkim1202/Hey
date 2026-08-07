@@ -42,12 +42,14 @@ the PR numbers. **Never invent something the log does not contain.**
 
 ```
 AI-days left  81.25 -> 80.85   ▇▇▆▆▅▅▄
-2026-07-23 ~ 2026-08-05 · 14 days · burned 0.40
-0.029 AI-days/day -> the remaining 80.85 is about 2788 days
+2026-07-23 ~ 2026-08-05 · 14 days · net change -0.40
 ```
 
-When the runway comes out absurd, **report it as printed and explain why.** It is usually
-one of three things: items are not being closed, scope grew, or the snapshot window is too short.
+**A shape, not a rate, and the delta is a net change rather than work delivered.** The
+line moves on closed work, added scope, removed scope and re-estimates alike. Never divide
+a finish date out of it. A flat or rising week is a question to ask rather than a verdict:
+were items not closed, or did scope grow? Say which you think it was, and say you are
+inferring.
 
 ### Blockers and carry-over
 
@@ -70,11 +72,14 @@ rename rather than fresh work.
 ### Estimate variance
 
 ```
-mean multiplier x7.1 (2 measurement(s)) — multiply estimates by this to land nearer reality
+P0|codegen pipeline        est AI 0.4 -> 8 business day(s) open
 ```
 
-Under three measurements, **write "sample too small" and do not propose a multiplier
-correction.** At three or more, name which category was off — scaffolding, UI, or state machine.
+**Elapsed, not effort. There is no multiplier and you may not compute one.** The days
+counted are days the item was open, and in them it waited for review, ran alongside other
+items and paused on blockers. Averaging those ratios would fold all of that into a number
+that looks like calibration. Take them **one at a time** and ask what share of the span
+actually went to the item — that answer is the user's, not yours.
 
 Variance only measures items **seen unfinished before they closed.** Anything already
 complete when recording began is excluded, so early on this list is short or empty. That is
@@ -127,8 +132,8 @@ The card carries the same five sections. **Never introduce a number that is not 
 ## Never
 
 - Never edit the ledger. A recap is read-only
-- Never state a trend, average or runway when snapshots are too few
-- Never propose a multiplier correction on fewer than three measurements
+- Never state a trend when snapshots are too few, and never divide a runway out of the burndown
+- Never average the variance rows into a multiplier. They are elapsed days, not effort
 - Never invent an accomplishment the log does not show
 - Never soften a bad metric by pivoting to a better one. If closed work is 0, say 0
 - Never build an Artifact unless asked

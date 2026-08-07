@@ -1214,7 +1214,19 @@ def cmd_carryover(args, cfg):
 
 
 def cmd_variance(args, cfg):
-    """Estimate vs actual: business days between an item first starting and finishing.
+    """Estimate against **elapsed business days**, per item. No multiplier.
+
+    There used to be a mean of the per-item ratios, offered as "multiply estimates by this
+    to land nearer reality". It is not an effort calibration and cannot be one: the days
+    counted are days the item was open, and an item waits for review, runs alongside other
+    items, pauses on a blocker and gets its boxes ticked late. `/hey-run` exists to run
+    several at once, so the tool encourages exactly the thing that inflates the number.
+    `/hey-tune` warned not to take it at face value and `/hey-recap` warned again -- a
+    figure that has to be disclaimed twice is not carrying information, and averaging
+    ratios that are each confounded does not remove the confounding.
+
+    The per-item rows stay. "Estimated 0.4, was open eight business days" is a fact worth
+    looking at one at a time, and the reader knows what else was happening in those days.
 
     **Only items seen unfinished before they closed are measured.** An item already
     complete in the first record was finished before tracking began, so its duration is
@@ -1248,19 +1260,28 @@ def cmd_variance(args, cfg):
             print(f"[{p['name']}] no item has been seen closing yet, so there is nothing to "
                   f"measure. Items already complete in the first record are excluded")
             continue
-        print(f"[{p['name']}] estimate vs actual (business days; assumes one item at a time)")
-        ratios = []
+        print(f"[{p['name']}] estimate vs elapsed, per item ({len(results)} measured)")
         for k, (ai, wd) in results.items():
-            ratio = wd / ai if ai else 0
-            ratios.append(ratio)
-            print(f"  {k:44} est AI {ai:5} -> actual {wd}d  x{ratio:.1f}")
-        avg = sum(ratios) / len(ratios)
-        print(f"  mean multiplier x{avg:.2f} ({len(results)} measurement(s))"
-              f" — multiply estimates by this to land nearer reality"
-              f"{' (estimates were optimistic)' if avg > 1.2 else ''}")
+            print(f"  {k:44} est AI {ai:5} -> {wd} business day(s) elapsed")
+        print("  elapsed from when the item was first seen started -- or first seen at "
+              "all, if it\n  never passed through in-progress -- to when it was first "
+              "seen closed. Not effort:\n  an item waits for review, shares its days "
+              "with other items and pauses on blockers.\n  Read these one at a time and "
+              "ask what share of each span went to the item")
 
 
 def cmd_burndown(args, cfg):
+    """The trend of estimated work remaining. **A trend, not a rate.**
+
+    The figure is `wip_ai + todo_ai` off each snapshot, and it moves for four different
+    reasons: work closed, scope added, scope removed, an item re-estimated. Dividing its
+    fall by the number of snapshots therefore does not produce a delivery rate, and the
+    runway that used to be divided out of it -- "the remaining 80.85 is about 2788 days" --
+    was absurd often enough that `/hey-recap` carried instructions for explaining it away.
+
+    What is left is the shape and the endpoints, which do answer a real question: is the
+    remaining work going down at all.
+    """
     bars = " ▁▂▃▄▅▆▇█"
     for p, _ in _each(args, cfg):
         rows = [r for r in read_stats()
@@ -1278,13 +1299,10 @@ def cmd_burndown(args, cfg):
             spark = "".join(bars[min(8, int((v - lo) / (hi - lo) * 8))] for v in vals)
         print(f"[{p['name']}] AI-days left  {vals[0]} -> {vals[-1]}   {spark}")
         print(f"  {rows[0]['date']} ~ {rows[-1]['date']} · {len(rows)} days · "
-              f"burned {round(vals[0] - vals[-1], 2)}")
-        burn = (vals[0] - vals[-1]) / max(1, len(rows) - 1)
-        if burn > 0:
-            print(f"  {round(burn, 3)} AI-days/day -> the remaining {vals[-1]} is about "
-                  f"{int(vals[-1] / burn)} days (plain division, not business days)")
-        else:
-            print("  nothing burned in this window, so no runway can be computed")
+              f"net change {round(vals[-1] - vals[0], 2):+}")
+        print("  the line moves on closed work, added scope, removed scope and "
+              "re-estimates alike,\n  so a fall is not a delivery rate and no runway can "
+              "be divided out of it")
 
 
 def cmd_note(args, cfg):

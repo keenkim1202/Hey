@@ -27,13 +27,15 @@ python3 "$HEY" carryover --days 3
 estimate.
 
 ```
-P0|codegen pipeline        est AI 0.4 -> actual 3d  x7.5
-P11|locale resolution      est AI 0.6 -> actual 4d  x6.7
-mean multiplier x7.1 — multiply estimates by this to land nearer reality (estimates were optimistic)
+P0|codegen pipeline        est AI 0.4 -> 3 business day(s) open
+P11|locale resolution      est AI 0.6 -> 4 business day(s) open
 ```
 
-**Do not take that multiplier at face value.** It assumes one item at a time, so parallel
-work inflates it. Say so, and ask what share of those days actually went to the item.
+**These are elapsed days, not effort, and there is no mean to apply.** An item that was
+open three days may have had four hours of work in it: it waited for review, shared the
+days with other items, paused on a blocker. Walk them one at a time and **ask the user
+what share of each span went to the item.** That answer is the evidence; the span is only
+the prompt for asking.
 
 ## 2. Classify what changed
 
@@ -75,16 +77,21 @@ python3 "$HEY" progress
 - What the total moved from and to
 - How the calendar conversion shifts, stating utilisation and parallel efficiency
 
-## 5. Correcting a multiplier itself
+## 5. Correcting the method rather than the items
 
-If the `variance` mean keeps leaning the same way, **fix the method, not the items.** Name
-which category in `/hey-plan`'s multiplier table was wrong and record it in the ledger's
-estimate-basis section.
+If several items in the same category came in the same way off, the category may be the
+problem rather than the estimates. **The evidence for that is the user's account of where
+the time went, item by item — never a mean of the `variance` rows.** Those rows are
+elapsed days, each confounded by review waits, parallel work and blockers, so averaging
+them produces a confident-looking number built out of noise. There is no such mean any
+more, and you may not compute one.
+
+Record the change and what it rests on:
 
 ```markdown
-> **Multiplier correction 2026-08-05**: "scaffolding and mapping 6-7x" drops to 4-5x.
-> Measured mean over 4 items: x4.3. Writing generators involves more judgement than
-> scaffolding, so the multiplier is lower.
+> **Estimate basis change 2026-08-05**: "scaffolding and mapping 6-7x" drops to 4-5x.
+> Four items in this category ran long. Asked on each: roughly 60% of the elapsed days
+> were hands-on, and the generator work needed judgement that scaffolding does not.
 ```
 
 ## Wording
@@ -96,5 +103,5 @@ estimate-basis section.
 - Never change an item the user did not mention
 - Never change a number without a reason line. No reason, no change
 - Never absorb unfinished work as a bigger estimate. That is a carry-over
-- Never multiply everything by the `variance` mean in bulk. Confirm item by item
-- Never propose a multiplier correction on 2 or fewer measurements. The sample is too small
+- Never derive a mean from the `variance` rows. They are elapsed days and each is confounded
+- Never re-estimate in bulk. One item, one reason, confirmed
