@@ -6,7 +6,7 @@
     "name": "keen",
     "url": "https://github.com/keenkim1202"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/keenkim1202/Hey",
   "repository": "https://github.com/keenkim1202/Hey",
   "keywords": ["productivity", "ledger", "estimation", "standup", "progress"],

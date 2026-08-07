@@ -19,7 +19,7 @@ Checklist, estimates, a morning briefing and an end-of-day record —
 printed from a file you can read and edit by hand.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/keenkim1202/Hey/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/keenkim1202/Hey/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![license](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![stars](https://img.shields.io/github/stars/keenkim1202/Hey?style=flat-square&color=e3b341)](https://github.com/keenkim1202/Hey/stargazers)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)](https://code.claude.com/docs/en/plugins)
 [![python](https://img.shields.io/badge/python-3.9%2B-3776ab?style=flat-square)](https://www.python.org/)
@@ -498,4 +498,4 @@ worth an issue.
 
 ## 📄 License
 
-MIT. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -19,7 +19,7 @@
 전부 직접 열어서 읽고 고칠 수 있는 파일 하나에서 나옵니다.
 
 [![ci](https://img.shields.io/github/actions/workflow/status/keenkim1202/Hey/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/keenkim1202/Hey/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](../../LICENSE)
+[![license](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](../../LICENSE)
 [![stars](https://img.shields.io/github/stars/keenkim1202/Hey?style=flat-square&color=e3b341)](https://github.com/keenkim1202/Hey/stargazers)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)](https://code.claude.com/docs/en/plugins)
 [![python](https://img.shields.io/badge/python-3.9%2B-3776ab?style=flat-square)](https://www.python.org/)
@@ -499,4 +499,4 @@ README 제목 위의 아이콘 `docs/icon.png` 도 `docs/icon.html` 에서 같�
 
 ## 📄 라이선스
 
-MIT. [LICENSE](../../LICENSE) 참고.
+Apache License 2.0. [LICENSE](../../LICENSE) 와 [NOTICE](../../NOTICE) 참고.
