@@ -35,7 +35,9 @@ Here the card is a **source, not output** — the one exception to the print-the
 in `hey-ledger`. `/wassup` and `/seeya` paste it; a standup does not. What leaves this
 skill is three lines a person can say out loud.
 
-Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
+Scope: `current` is the project you are standing in, `all` is every registered one, and
+the default lives in `~/.hey/config.json`. `hey-ledger` has the rest of the conventions,
+but you do not need them to run this.
 
 ## 2. Three lines, in this order
 
@@ -70,7 +72,7 @@ thing most likely to surprise someone else. Point at the branch; do not push it.
 
 ## Wording
 
-**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+**How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.
 
 ## Never
 

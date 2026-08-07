@@ -138,7 +138,7 @@ No commits or PRs were created. The changes are in the working tree
 
 ## Wording
 
-**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+**How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.
 
 ## Never
 

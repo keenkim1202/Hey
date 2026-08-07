@@ -30,7 +30,9 @@ showing it, they never see the card at all — which is the one thing they asked
 Reproduce it exactly: no re-headed markdown, no rebuilt table, no dropped section. Your
 judgement goes underneath it, in step 2.
 
-Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
+Scope: `current` is the project you are standing in, `all` is every registered one, and
+the default lives in `~/.hey/config.json`. `hey-ledger` has the rest of the conventions,
+but you do not need them to run this.
 With scope `all`, `brief` prints one card per project — paste each one.
 
 Only reach for these when the card raises a specific question:
@@ -105,7 +107,7 @@ the one item that would recover it.
 
 ## Wording
 
-**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+**How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.
 
 ## Never
 

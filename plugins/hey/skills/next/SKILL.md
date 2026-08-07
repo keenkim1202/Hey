@@ -20,7 +20,9 @@ python3 "$HEY" next
 python3 "$HEY" dirty
 ```
 
-Read the ledger conventions from the `hey-ledger` skill if scope or paths are unclear.
+Scope: `current` is the project you are standing in, `all` is every registered one, and
+the default lives in `~/.hey/config.json`. `hey-ledger` has the rest of the conventions,
+but you do not need them to run this.
 
 **Loose work outranks the list.** If `dirty` reports unpushed commits or uncommitted
 files, that is the next item — say so and name the worktree and branch. Work that only
@@ -81,7 +83,7 @@ Start this, or take a different one?
 
 ## Wording
 
-**How you word what you add is in the `hey-ledger` skill**, under "How to write what you add" — three blocks at most, no praise, no filler, numbers copied from the script.
+**How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.
 
 ## Never
 
