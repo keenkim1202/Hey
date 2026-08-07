@@ -62,6 +62,8 @@ LEDGER = """# fixture ledger
 - [ ] **Third item** — depending on the account API — 1 MD / AI 0.2
 - [x] **Settled earlier** — finished before recording began — 2 MD / AI 0.5
 - [x] **Groundwork** — done long ago, deliberately never estimated
+- [ ] **Marked elsewhere** — outside the blocker section, said outright `[blocked]` — 1 MD / AI 0.1
+- [ ] **Reads as blocked** — waiting on a decision nobody marked — 1 MD / AI 0.1
 
 ## Blockers
 
@@ -72,10 +74,9 @@ LEDGER = """# fixture ledger
 - [ ] **Not yet** — blocked from a day that has not arrived `[since 2099-01-01]`
 """
 
-# 13 boxes across 10 items, 4 of them closed: five item lines carry subitems or stand
-# alone, and the four blockers are one box each. `part two` uses `[X]`, so an
-# implementation that only accepts `[x]` drops it from both halves of that count.
-BOXES = "4/13 boxes"
+# 15 boxes across 12 items, 4 of them closed. `part two` uses `[X]`, so an implementation
+# that only accepts `[x]` drops it from both halves of that count.
+BOXES = "4/15 boxes"
 
 WIDTH_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
@@ -767,12 +768,16 @@ def main() -> int:
         ([hey, "variance"], "variance: settled-earlier item excluded",
          "no item has been seen closing yet"),
         ([hey, "item", "First item"], "item history", "first seen"),
-        ([hey, "item", "P0"], "item: an ambiguous key lists the matches", "matches 5 items"),
+        ([hey, "item", "P0"], "item: an ambiguous key lists the matches", "matches 7 items"),
         ([hey, "item", "nope"], "item: no match says so", "no item matches"),
         ([hey, "burndown"], "burndown"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
-        ([hey, "blockers"], "blockers: lists them all", "5 blocked"),
+        ([hey, "blockers"], "blockers: lists them all", "6 blocked"),
+        # `[blocked]` classifies wherever the item sits, so a blocker does not have to
+        # be filed under the heading to count.
+        ([hey, "blockers"], "blockers: `[blocked]` counts outside a blocker section",
+         "Marked elsewhere"),
         # The fixture carries one of every state a blocker's age can be in, and each calls
         # for a different move, so each has to be told apart on the screen you triage from.
         ([hey, "blockers"], "blockers: a typo'd date is not a missing one",
@@ -821,7 +826,19 @@ def main() -> int:
     # ones -- three sit in the blocker section, while `Third item` says "depending", which
     # is not `pending` and must not count.
     code, out = run([hey, "batch"], env, proj)
-    check("blocker detection", "5 blocked item(s) excluded" in out, out)
+    check("blocker detection", "6 blocked item(s) excluded" in out, out)
+
+    # The other half of the rule. Words in prose no longer classify: an item can say
+    # "waiting on a decision" and still be work you are free to pick up. A false positive
+    # here is expensive -- the item leaves the `/hey-run` candidates and starts accruing a
+    # wait it was never on.
+    code, out = run([hey, "blockers"], env, proj)
+    check("blockers: a waiting word without the marker is not a blocker",
+          "Reads as blocked" not in out, out)
+    # But the change must not be silent on a ledger written under the old rule.
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: names the lines that read as waiting but carry no marker",
+          "read as waiting but carry no" in out and "Reads as blocked" in out, out)
 
     # A `[since]` naming a day that has not arrived is a deliberate statement that the wait
     # has not started. The records would happily supply an age -- the item has been sitting
@@ -1084,7 +1101,7 @@ def main() -> int:
     # The bug: `P0` fits every item in the phase, and the report used to name one of them,
     # picked by whichever order the dict happened to be in.
     check("pr-sync: an ambiguous marker names none of them, and lists what it fits",
-          "matches 5 items" in out and "P0|Groundwork" in out, out)
+          "matches 7 items" in out and "P0|Groundwork" in out, out)
     check("pr-sync: a marker matching nothing says so",
           "P9|Nope -> not found in ledger" in out, out)
     # `_sh` swallows a failed `gh`, so an empty result has to be reported rather than read

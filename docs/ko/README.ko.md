@@ -299,7 +299,7 @@ codex plugin marketplace add keenkim1202/Hey && codex plugin add hey@hey
 - 박스는 `[ ]`, `[x]`, `[X]` 셋입니다. 그 외는 박스가 아니고 어디에도 집계되지 않습니다
 - 여러 프로젝트를 병행할 수 있습니다. `scope current` 는 현재 위치 하나, `scope all` 은
   전부입니다
-- 섹션 이름과 블로커 키워드는 **전 언어 별칭으로 매칭**하므로 설정 없이 동작합니다
+- 섹션 이름은 **전 언어 별칭으로 매칭**하므로 설정 없이 동작합니다
 
 ---
 

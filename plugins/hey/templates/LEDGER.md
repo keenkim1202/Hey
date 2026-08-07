@@ -71,9 +71,14 @@ dependencies is not included.
 
 ## Blockers (clear before starting)
 
-Things you cannot resolve yourself. Put a waiting word in the text — `waiting`, `blocked`,
-`TBD`, `needs decision`, `pending` — and the scripts will treat it as a blocker, drop it from
-`/hey-run` candidates and count how long it has been stuck.
+Things you cannot resolve yourself. Anything under this heading counts as blocked, and so
+does any item anywhere carrying `[blocked]`. Blocked items drop out of `/hey-run`
+candidates and their wait gets counted.
+
+**Say it with the marker, not with a word.** Detection used to read `waiting`, `pending`
+and `TBD` out of the item text, which meant ordinary prose could take an item out of the
+running — an expensive mistake, since nothing then offers it to you and it starts accruing
+a wait it was never on.
 
 Say when the wait started with `[since YYYY-MM-DD]`. The age is what decides which blocker
 to go chase, and without the marker it can only be inferred once several days are on

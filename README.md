@@ -296,7 +296,7 @@ flattering number.
 - A box is `[ ]`, `[x]` or `[X]`. Anything else is not a box and is counted nowhere
 - Several projects can run at once. `scope current` is the one you are standing in,
   `scope all` is every registered project
-- Ledger sections and blocker keywords are matched against **every language alias**, so an
+- Ledger section headings are matched against **every language alias**, so an
   English ledger and a Korean one both work with no configuration
 
 ---

@@ -109,10 +109,12 @@ Checklist item convention:
     bracket is nearly always a list of what the item covers, and dropping it is what turns
     a line into a name. The exception is a bracket that opens early in a sentence carrying
     on afterwards — there the tail is kept, because cutting would leave a fragment
-- To mark something blocked, put a waiting word in the item text (`waiting`, `blocked`,
-  `TBD`, `needs decision`, `pending`, or the Korean equivalents). Blocked items drop out
-  of `/hey-run` candidates and get aged by `/wassup`. The word has to stand on its own —
-  `depending` is not `pending`, and `대기업` is not `대기`
+- **To mark something blocked, write `[blocked]` on the item line** — or file it under a
+  blocker heading, which does the same thing. Blocked items drop out of `/hey-run`
+  candidates and get aged by `/wassup`. A waiting word in the prose does **not** block an
+  item: text says `waiting on the API` all the time without meaning "hold this", and an
+  item removed from the running by accident is one nothing offers you again. `doctor`
+  points at lines that read as waiting and carry no marker
 - **Name the branch an item's work lives on with `[branch <name>]`**, on the item line or
   on the subitem that becomes that branch. Without it the two halves never meet: `batch`
   knows the items, `dirty` and the card know the worktrees, and which item a loose branch

@@ -24,9 +24,14 @@ estimate turns into a delay later.
 - Anything requiring an external account, console or certificate
 - Anything waiting on another team's decision
 
-Make these items anyway, but **put a waiting word in the text** (`waiting`, `blocked`,
-`TBD`, `needs decision`, `pending`). The scripts then treat them as blockers: they drop out
-of `/hey-run` candidates and `/wassup` starts counting how long they have been stuck.
+Make these items anyway, and **mark them `[blocked]`** — or file them under the blocker
+heading, which does the same thing. They then drop out of `/hey-run` candidates and their
+wait gets counted.
+
+**A word in the text is not a marker.** Writing "waiting on the API" does not block an
+item, deliberately: prose uses those words without meaning "hold this", and an item taken
+out of the running by accident is one nothing will offer you again. `doctor` points at
+lines that read as waiting and carry no marker, so nothing goes quiet.
 
 ## 2. Break it into items
 

@@ -317,12 +317,18 @@ class Ledger:
     # looked for and could not be found, which is settled, where a missing marker is a
     # question nobody has asked yet.
     SINCE = re.compile(r"\[since (\d{4}-\d{2}-\d{2}|unknown)\]")
+    # Blocked, said outright. This used to be inferred from words in the item text --
+    # `waiting`, `pending`, `TBD` -- and ordinary prose uses those without meaning "hold
+    # this". A false positive is expensive: the item drops out of `/hey-run` candidates
+    # and starts accruing a wait it was never on. `doctor` still reads the words, but
+    # only to point at lines that may want the marker.
+    BLOCKED = re.compile(r"\[blocked\]")
     # Which branch an item's work lives on. Branches outlast worktrees, whose paths are
     # temporary, and they are what commits and pull requests actually attach to.
     BRANCH = re.compile(r"\[branch ([^\]\s]+)\]")
     # Every marker, for stripping them back out of anything a person reads.
     MARKERS = re.compile(r"`?\[(?:AI \d+\.?\d*|since (?:\d{4}-\d{2}-\d{2}|unknown)"
-                         r"|branch [^\]\s]+)\]`?")
+                         r"|branch [^\]\s]+|blocked)\]`?")
 
     def __init__(self, project: dict):
         self.project = project
@@ -523,8 +529,8 @@ class Ledger:
                 continue
             sect = it["section"].lower()
             in_section = any(w.lower() in sect for w in S.blocker_sections())
-            in_text = S.blocker_hit(it["text"])
-            if in_section or in_text:
+            marked = bool(self.BLOCKED.search(it["text"]))
+            if in_section or marked:
                 m = self.SINCE.search(it["text"])
                 raw = m[1] if m else None
                 days, bad = None, False
@@ -1021,6 +1027,18 @@ def cmd_doctor(args, cfg):
                                 f"does not have: {', '.join(stale[:3])}")
                 else:
                     ok(f"{len(markers)} branch marker(s), all resolvable")
+            # Words used to classify an item as blocked on their own. They no longer do, so
+            # a ledger written under the old rule would go quiet about its blockers. Named
+            # rather than guessed at: `doctor` still reads the words, and says which lines
+            # look like they want the marker.
+            unmarked = [i for i in ledger.items
+                        if ledger.state(i) != S.DONE and ledger.key(i) not in blocked
+                        and S.blocker_hit(i["text"])]
+            if unmarked:
+                say("warn", f"{len(unmarked)} item(s) read as waiting but carry no "
+                            f"`[blocked]` marker and sit outside a blocker section, so "
+                            f"nothing treats them as blocked: "
+                            f"{', '.join(i['title'] for i in unmarked[:3])}")
             # `[since 2026-13-45]` matches the marker's shape and then fails to parse, so
             # the age silently reads as "none" while the line looks answered -- it is also
             # excluded from the `blockers` hint that chases undated ones. Nothing else in
@@ -1640,8 +1658,8 @@ def cmd_item(args, cfg):
         print(f"[{p['name']}] {key}")
         print(f"  now       {led.state(item)}, {led.boxes(item)[0]}/{led.boxes(item)[1]} "
               f"boxes, AI {item['ai']}")
-        if S.blocker_hit(item["text"]):
-            print("  blocked   the item text marks itself as waiting")
+        if Ledger.key(item) in {b["key"] for b in led.blockers()}:
+            print("  blocked   marked `[blocked]`, or sitting in a blocker section")
 
         seen = [(r["date"], i) for r in rows for i in r["items"] if i["k"] == key]
         if not seen:
