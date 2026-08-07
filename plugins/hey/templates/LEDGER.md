@@ -61,8 +61,13 @@ dependencies is not included.
 
 ## P0. <first phase> (0 MD / AI 0)
 
-- [ ] **<item name>** — <description> — 3 MD / AI 0.4
+- [ ] **<item name>** `[id <short-name>]` — <description> — 3 MD / AI 0.4
   - [ ] <subitem>
+
+> `[id ...]` is optional and worth adding **when you write the item**. History is
+> otherwise keyed on the item's name, so rewording a line loses everything recorded
+> against it. An id makes later renames free and lets two items share a title. It does not
+> recover history from before it was added.
 
 > Leave one line of reasoning per estimate: what it was compared against, what was
 > assumed, and **what was left out.**

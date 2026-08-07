@@ -323,12 +323,17 @@ class Ledger:
     # and starts accruing a wait it was never on. `doctor` still reads the words, but
     # only to point at lines that may want the marker.
     BLOCKED = re.compile(r"\[blocked\]")
+    # A name for the item that does not change when its name does. Without one the key
+    # is `<phase>|<title>`, so editing the wording of a line severs everything recorded
+    # against it -- carry-over restarts, `item` loses the history, and `earned_ai` reads
+    # the rename as one item vanishing and another appearing on the same day.
+    ID = re.compile(r"\[id ([^\]\s]+)\]")
     # Which branch an item's work lives on. Branches outlast worktrees, whose paths are
     # temporary, and they are what commits and pull requests actually attach to.
     BRANCH = re.compile(r"\[branch ([^\]\s]+)\]")
     # Every marker, for stripping them back out of anything a person reads.
     MARKERS = re.compile(r"`?\[(?:AI \d+\.?\d*|since (?:\d{4}-\d{2}-\d{2}|unknown)"
-                         r"|branch [^\]\s]+|blocked)\]`?")
+                         r"|branch [^\]\s]+|blocked|id [^\]\s]+)\]`?")
 
     def __init__(self, project: dict):
         self.project = project
@@ -362,6 +367,7 @@ class Ledger:
                     "done": m[1].lower() == "x",
                     "kids": [],
                     "kid_ai": [],
+                    "id": (self.ID.search(m[2]) or [None, None])[1],
                     "branches": self.BRANCH.findall(m[2]),
                     "md": float(est[1]) if est else 0.0,
                     "ai": float(est[2]) if est else 0.0,
@@ -578,6 +584,25 @@ class Ledger:
 
     @staticmethod
     def key(it: dict) -> str:
+        """What history is recorded against: the `[id ...]` when there is one.
+
+        Falling back to `<phase>|<title>` is what every ledger written so far relies on,
+        and it works right up until someone improves the wording of a line. It also cannot
+        tell two items apart when a phase holds the same title twice -- `doctor` reports
+        that, because the recorded rows silently keep only one of them.
+
+        An id makes every **later** rename free. It does not reconnect an item to history
+        already recorded under its old name: once the rename has happened that name is no
+        longer anywhere in the ledger, so matching it back would mean guessing which
+        recorded key used to be this item -- and guessing wrong would merge two items'
+        histories without saying so. `doctor` reports recorded keys that no item answers
+        to, which names the severance instead of papering over it.
+        """
+        return it.get("id") or f"{it['phase']}|{it['title']}"
+
+    @staticmethod
+    def legacy_key(it: dict) -> str:
+        """The key this item would have without an id. What `doctor` compares against."""
         return f"{it['phase']}|{it['title']}"
 
     # -- section bodies
@@ -665,6 +690,7 @@ def need_history(name: str, what: str, have: int, need: int) -> None:
     print(f"[{name}] {what} needs {need} recorded day(s), and has {have}. "
           f"{short} more of `/seeya` (or `board.py collect`) opens it. "
           f"The first day recorded is a baseline, so it does not count toward output")
+
 
 
 def read_stats() -> list[dict]:
@@ -1027,6 +1053,34 @@ def cmd_doctor(args, cfg):
                                 f"does not have: {', '.join(stale[:3])}")
                 else:
                     ok(f"{len(markers)} branch marker(s), all resolvable")
+            # Two items answering to one key is not a syntax error and produces no message
+            # anywhere: the recorded row holds both, and every reader builds a dict off the
+            # key, so one of them silently wins and the other's closed work is never
+            # counted. An `[id ...]` on either is the fix.
+            seen_keys: dict = {}
+            for i in ledger.items:
+                seen_keys.setdefault(ledger.key(i), []).append(i["title"])
+            clashes = {k: v for k, v in seen_keys.items() if len(v) > 1}
+            if clashes:
+                first = sorted(clashes)[0]
+                say("FAIL", f"{len(clashes)} key(s) claimed by more than one item, so only "
+                            f"one of each is recorded: `{first}` is used by "
+                            f"{len(clashes[first])} items. Give one an `[id <name>]`")
+            # A recorded key nothing answers to is a rename, a deletion or a phase move.
+            # Each severs everything filed under it -- carry-over restarts, `item` finds
+            # nothing, and the first snapshot after banks the item's closed boxes again.
+            # Naming the orphan is the only honest report: which of the three it was cannot
+            # be recovered from the ledger, since the old name is no longer in it.
+            known = {ledger.key(i) for i in ledger.items}
+            recorded = {i["k"] for r in read_stats()
+                        if r["project"] == p["name"] and r.get("items")
+                        for i in r["items"]}
+            orphans = sorted(recorded - known)
+            if orphans:
+                say("warn", f"{len(orphans)} recorded key(s) no item answers to now: "
+                            f"{', '.join(orphans[:3])}. A renamed, moved or deleted item "
+                            f"leaves its history behind -- `[id <name>]` on an item makes "
+                            f"its later renames free")
             # Words used to classify an item as blocked on their own. They no longer do, so
             # a ledger written under the old rule would go quiet about its blockers. Named
             # rather than guessed at: `doctor` still reads the words, and says which lines
@@ -1251,7 +1305,7 @@ def cmd_variance(args, cfg):
     unknown; scoring it as one day would drag the multiplier toward zero and turn the
     advice upside down.
     """
-    for p, _ in _each(args, cfg):
+    for p, led in _each(args, cfg):
         rows = [r for r in read_stats() if r["project"] == p["name"] and r.get("items")]
         if len(rows) < 2:
             need_history(p["name"], "estimate variance", len(rows), 2)

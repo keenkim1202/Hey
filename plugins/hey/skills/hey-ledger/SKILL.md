@@ -115,6 +115,18 @@ Checklist item convention:
   item: text says `waiting on the API` all the time without meaning "hold this", and an
   item removed from the running by accident is one nothing offers you again. `doctor`
   points at lines that read as waiting and carry no marker
+- **An item's name is half its key, so `[id <name>]` is what makes it safe to rename.**
+  Without one, history is recorded against `<phase>|<title>`, and improving the wording of
+  a line severs everything filed under it: carry-over restarts, `item` loses the record,
+  and the day of the rename banks the item's closed boxes a second time. With one, the
+  wording is free from then on. **It does not recover history already recorded under the
+  old name** — once the rename has happened that name is gone from the ledger, and
+  matching it back would be a guess. Add ids when you write the items, not when you are
+  about to rename one. `doctor` names recorded keys no item answers to, so a severed
+  history is reported rather than silent
+- **Two items in one phase cannot share a title.** That is one key for both, and the
+  recorded row keeps only one of them, so the other's closed work is never counted.
+  `doctor` reports it as a failure; give one of them an `[id ...]`
 - **Name the branch an item's work lives on with `[branch <name>]`**, on the item line or
   on the subitem that becomes that branch. Without it the two halves never meet: `batch`
   knows the items, `dirty` and the card know the worktrees, and which item a loose branch

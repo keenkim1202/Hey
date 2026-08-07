@@ -343,6 +343,44 @@ assert contradicts_zero({{'code': {{'added': 300, 'deleted': 40}}}}) is False
 assert contradicts_zero(None) is False
 """
 
+ITEM_ID_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from hey import Ledger, earned_ai
+
+def item(phase, title, ident=None):
+    return {{'phase': phase, 'title': title, 'id': ident, 'ai': 1.0, 'done': False,
+            'kids': [True, False], 'kid_ai': [None, None]}}
+
+# Without an id the key is the name, which is what every ledger written so far relies on.
+assert Ledger.key(item('P0', 'Fix login')) == 'P0|Fix login'
+assert Ledger.legacy_key(item('P0', 'Fix login', 'login')) == 'P0|Fix login'
+
+# With one the name is free, and moving the item to another phase does not move its key.
+assert Ledger.key(item('P0', 'Fix login', 'login')) == 'login'
+assert Ledger.key(item('P9', 'Renamed entirely', 'login')) == 'login'
+
+# Which is the whole point: a rename is invisible to the recorded history, so the day of
+# the rename scores the one box that actually closed.
+before = {{'items': [{{'k': 'login', 'ai': 1.0, 'closed': 1, 'boxes': 3, 'earned': 0.333}}]}}
+after = {{'items': [{{'k': 'login', 'ai': 1.0, 'closed': 2, 'boxes': 3, 'earned': 0.667}}]}}
+assert earned_ai(before, after) == 0.334, earned_ai(before, after)
+
+# Renaming without an id is what it protects against: the old key vanishes, the new one is
+# a first sighting, and everything the item had already banked is banked a second time.
+renamed = {{'items': [{{'k': 'P0|New wording', 'ai': 1.0, 'closed': 2, 'boxes': 3,
+                       'earned': 0.667}}]}}
+was = {{'items': [{{'k': 'P0|Old wording', 'ai': 1.0, 'closed': 1, 'boxes': 3,
+                   'earned': 0.333}}]}}
+assert earned_ai(was, renamed) == 0.667, earned_ai(was, renamed)
+
+# Two items in one phase sharing a title claim one key, and a dict keyed on it keeps one.
+# That is the collision `doctor` reports as a failure.
+clash = [item('P0', 'Fix login'), item('P0', 'Fix login')]
+assert len({{Ledger.key(i) for i in clash}}) == 1
+# An id on either one separates them.
+assert len({{Ledger.key(i) for i in [item('P0', 'Fix login', 'a'), item('P0', 'Fix login')]}}) == 2
+"""
+
 CARD_FIT_PROBE = """
 import os, sys; sys.path.insert(0, {here!r})
 import hey
@@ -718,6 +756,8 @@ def main() -> int:
         "blocker age marks are distinct and never draw wide":
             AGE_MARK_PROBE.format(here=str(HERE)),
         "every rendered card row fits the card": CARD_FIT_PROBE.format(here=str(HERE)),
+        "an item keeps its history when its name changes":
+            ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
         "tokens are charged to a project by path, not by string prefix":
