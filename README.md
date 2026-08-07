@@ -496,6 +496,13 @@ worth an issue.
 
 ---
 
+## 🤝 Contributing
+
+One script is the gate — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to run it and
+the two or three things that will otherwise catch you out.
+
+---
+
 ## 📄 License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

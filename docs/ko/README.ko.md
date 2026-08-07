@@ -497,6 +497,13 @@ README 제목 위의 아이콘 `docs/icon.png` 도 `docs/icon.html` 에서 같�
 
 ---
 
+## 🤝 기여
+
+검증은 스크립트 하나로 끝납니다. 돌리는 법과 모르면 걸리는 두어 가지는
+[CONTRIBUTING.md](../../CONTRIBUTING.md) 에 있습니다.
+
+---
+
 ## 📄 라이선스
 
 Apache License 2.0. [LICENSE](../../LICENSE) 와 [NOTICE](../../NOTICE) 참고.

@@ -7,3 +7,6 @@ __pycache__/
 
 # The ledger is per-user local state and is never committed, including here
 TASKS.local.md
+
+# Personal working notes. Never shared, and never a place to put anything the repo needs.
+.claude.local.md
