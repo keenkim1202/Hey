@@ -89,7 +89,7 @@ more, and you may not compute one.
 Record the change and what it rests on:
 
 ```markdown
-> **Estimate basis change 2026-08-05**: "scaffolding and mapping 6-7x" drops to 4-5x.
+> **Estimate basis change 2026-08-05**: code factor for generator work drops from 6x to 4x.
 > Four items in this category ran long. Asked on each: roughly 60% of the elapsed days
 > were hands-on, and the generator work needed judgement that scaffolding does not.
 ```

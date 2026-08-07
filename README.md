@@ -183,7 +183,7 @@ an issue.
 | `/hey <text>` | capture a note now. Date, branch and commit attach automatically |
 | `/hey-plan` | turn a spec into a checklist with MD and AI estimates |
 | `/hey-tune` | adjust estimates, recording why in the ledger |
-| `/hey-sync` | update the ledger — checks, totals, PR log, next-up order |
+| `/hey-sync` | update the ledger — checks, totals, next-up order |
 | `/hey-run` | run a scoped loop of items and report a summary; recommends parallel work |
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
 | `/hey-standup` | three lines for a standup. No metrics, no percentages |
@@ -202,20 +202,23 @@ Two numbers per item, because one is not enough to argue with.
 | `MD` | a traditional man-day, without tooling |
 | `AI` | the man-day equivalent with tooling. `AI 1.0` is one 8-hour day |
 
-`/hey-plan` splits an item into code work and human-gated work and applies multipliers
-separately, because they do not shrink at the same rate.
+`/hey-plan` splits an item into code work and human-gated work, because they do not
+shrink at the same rate.
 
-| Kind | Multiplier |
+| Kind | How it scales |
 |---|---|
-| Scaffolding, mapping, boilerplate | 6-7x |
-| UI with a settled spec | 5-6x |
-| Screens wired to an API | 3-4x |
-| State machines, concurrency | 1.5-3x |
-| **Human-gated** — consoles, accounts, certificates, store review | **1x** |
+| Code | faster with tooling, by a factor you measure |
+| **Human-gated** — consoles, accounts, certificates, store review | **1x, always** |
 
-The last row is the point. External waiting does not get faster with better tooling, so
+The second row is the point. External waiting does not get faster with better tooling, so
 an estimate that folds it into the rest is wrong in a way that compounds. Every total
 reports what share of it sits at 1x.
+
+**There is no table of code multipliers, deliberately.** A ratio depends on the language,
+the codebase, the model and the person, and one printed here would be a number nobody
+measured being read as one somebody did. Derive it from your own finished items — `hey.py
+variance` shows how long each took — and until you have a few, say the estimates are
+guesses.
 
 ---
 
@@ -350,7 +353,7 @@ true width to leave room for the margin the transcript adds.
 <project>/TASKS.local.md    the ledger
 ```
 
-**The ledger may be two files.** The work log, notes and PR log only ever grow, so
+**The ledger may be two files.** The work log and notes only ever grow, so
 `hey.py add <root> --ledger-log <path>` puts them in a companion file while the checklist
 stays in the first. Sections are found across both; checkboxes are read from the primary
 file only. One file remains the default and needs no configuration.
@@ -424,7 +427,7 @@ claude plugin validate ./plugins/hey
 ```
 
 **Requirements:** python3 3.9 or newer (which macOS ships) and git. `gh` is used only for
-the PR log; without it that step is skipped.
+`pr-sync`; without it that command cannot read merged PRs.
 
 `docs/social-preview.png` is generated from `docs/social-preview.html`, so the repository's
 link preview is edited as markup rather than in an image editor:

@@ -114,7 +114,6 @@ SECTIONS = {
     "notes": ("Notes", "메모"),
     "log": ("Work log", "작업 로그"),
     "next": ("Next up", "다음 착수 순서"),
-    "prs": ("PR log", "PR 기록"),
     "summary": ("Summary", "진행 요약"),
 }
 

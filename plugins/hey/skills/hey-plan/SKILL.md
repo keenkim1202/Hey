@@ -58,20 +58,31 @@ Produce two numbers:
 | `MD` | a traditional man-day, without tooling |
 | `AI` | the man-day equivalent with tooling. `AI 1.0` = one 8-hour day |
 
-**Split each item into two kinds of work and apply the multipliers separately.**
+**Split each item into two kinds of work and treat them separately.**
 
-| Kind | Multiplier | Example |
+| Kind | How it scales | Example |
 |---|---|---|
-| Scaffolding, mapping, boilerplate | 6-7x | module setup, DTO mapping, generators |
-| UI with a settled spec | 5-6x | screens whose design is final |
-| Screens wired to an API | 3-4x | anything shaped by server responses |
-| State machines, concurrency | 1.5-3x | streaming, cancel and retry policy |
-| **Human-gated** | **1x** | external consoles, accounts, certificates, store review, reproducing against a live server |
+| Code | faster with tooling, by a factor you have to find | module setup, DTO mapping, screens, state machines |
+| **Human-gated** | **1x, always** | external consoles, accounts, certificates, store review, reproducing against a live server |
 
-Human-gated work **does not shrink with better tooling**. Where it is mixed in, break it out.
+Human-gated work **does not shrink with better tooling**. Where it is mixed in, break it
+out — that split is the part of this method that holds regardless of who is estimating.
+
+**The code factor is yours to measure, and this skill will not hand you one.** There is no
+table of ratios here because a ratio depends on the language, the codebase, the model and
+the person, and a number that looks authoritative is worse than an admitted guess: it
+turns speculation into schedule arithmetic that nobody re-examines.
+
+- **With history**: read `hey.py variance` for items of the same kind already finished, ask
+  what share of each span was hands-on, and estimate from that. Write the factor and the
+  items you drew it from into the ledger's estimate basis.
+- **Without history**: say plainly that the first estimates are guesses, keep them coarse,
+  and revisit after the first few items close. **Do not invent a multiplier to look
+  precise.**
 
 ```
 StoreKit 2 = 5 MD code @4x + 3 MD console and sandbox @1x = 8 MD / AI 4.25
+             the 4x is measured, from four finished items of this kind
 ```
 
 When totalling, **state what percentage sits at 1x.** That is the floor tooling cannot move.

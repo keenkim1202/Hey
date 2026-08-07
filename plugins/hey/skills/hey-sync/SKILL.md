@@ -1,6 +1,6 @@
 ---
 name: hey-sync
-description: Bring the ledger up to date — check boxes, recount progress, append to the PR log, reorder what is next. Use on "update the ledger", "sync the checklist", "recount progress", "reflect current status", "pull in the merged PRs". Edits in place; never creates a new file.
+description: Bring the ledger up to date — check boxes, recount progress, reorder what is next. Use on "update the ledger", "sync the checklist", "recount progress", "reflect current status", "pull in the merged PRs". Edits in place; never creates a new file.
 ---
 
 # Updating the ledger
@@ -40,15 +40,19 @@ python3 "$HEY" pr-sync
 
 That command **only finds them; it never checks anything off.** Verify in the code first.
 
-## 2. Append to the PR log
+## 2. Do not keep a PR log
 
-The PR log is a ledger. **Never delete or compress rows; append.**
+There used to be a table here to append to. **Do not recreate it.** GitHub already holds
+the authoritative, searchable, append-only record of every PR with its open and merge
+dates, and a second copy maintained by hand goes stale and then gets believed. `pr-sync`
+maps a merged PR to the items it names, on request, which is the part the ledger cannot
+get from the forge.
 
-- Add a row for a new PR; fill the merge date once merged. Dates as `MM-DD`
-- Leave an unmerged one as `-` and fill it on the next run
-- The impact column says **which phase and which item moved**, not a restatement of the title
-- With squash merges the branch commits never appear on the default branch. Do not judge by
-  `git branch --merged`; use `gh pr view <n> --json state`
+What *is* worth writing down is which item a PR moved, and that belongs on the item:
+keep the PR number in the subitem you tick, as in the next step.
+
+With squash merges the branch commits never appear on the default branch. Do not judge by
+`git branch --merged`; use `gh pr view <n> --json state`.
 
 ## 3. Check boxes
 

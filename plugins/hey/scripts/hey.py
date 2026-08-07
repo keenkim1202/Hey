@@ -903,7 +903,7 @@ def cmd_doctor(args, cfg):
         elif required:
             say("FAIL", f"{tool} not found - nothing that reads a repository will work")
         else:
-            say("warn", f"{tool} not found - the PR log step is skipped")
+            say("warn", f"{tool} not found - `pr-sync` cannot read merged PRs")
     ok(f"language {S.lang(cfg)}")
     cols, source = card_width()
     ok(f"card width {cols} ({source})")
@@ -967,7 +967,7 @@ def cmd_doctor(args, cfg):
             continue
         ok(f"ledger {led}")
         ledger = Ledger(p)
-        for key in ("notes", "log", "next", "prs", "summary"):
+        for key in ("notes", "log", "next", "summary"):
             level = "### " if key == "next" else "## "
             if not ledger.has_section(key, level):
                 names = " / ".join(S.section_aliases(key))
@@ -1717,7 +1717,7 @@ def main() -> None:
     sp.add_argument("root")
     sp.add_argument("--ledger", help="ledger path (default: <root>/TASKS.local.md)")
     sp.add_argument("--ledger-log", dest="ledger_log",
-                    help="second file holding the append-only sections (log, notes, PR log)")
+                    help="second file holding the append-only sections (work log, notes)")
     sp.add_argument("--name")
     sp.add_argument("--base", help="branch to measure unpushed commits against "
                                   "(default: the remote's own default branch)")

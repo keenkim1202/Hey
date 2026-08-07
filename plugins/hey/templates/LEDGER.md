@@ -10,10 +10,11 @@ rate: one box may be a typo fix and the next a subsystem.
 > Estimate basis: <date>. `MD` is a traditional man-day; `AI` is the man-day equivalent
 > with tooling. `AI 1.0` = one 8-hour day.
 >
-> **How AI is derived**: split each item into code work and human-gated work, then apply
-> multipliers separately. Code runs 3-7x (scaffolding and mapping 6-7x, UI with a settled
-> spec 5-6x, API-wired screens 3-4x, state machines 1.5-3x). Human-gated work is 1x —
-> external consoles, accounts, certificates, store review, reproducing against a live server.
+> **How AI is derived**: split each item into code work and human-gated work. Human-gated
+> work is 1x and does not shrink with tooling — external consoles, accounts, certificates,
+> store review, reproducing against a live server. The factor for code work is yours to
+> measure from your own finished items; record it here with what you drew it from, and
+> until you have a few, write down that the estimates are guesses.
 >
 > Last synced: <date> · <default branch> `<commit>` · no open PRs
 
@@ -23,18 +24,6 @@ rate: one box may be a typo fix and the next a subsystem.
 
 Whatever comes to mind. `/hey <text>` inserts under today's date. **Newest first.**
 Date, time, branch and commit are attached automatically. Never deleted, only appended.
-
----
-
-## PR log
-
-A running record. **Never delete or compress rows; append.** `/hey-sync` adds rows and
-fills in merge dates.
-
-| PR | Title | Opened | Merged | Checklist impact |
-|---|---|---|---|---|
-
-**No open PRs.**
 
 ## Work log
 

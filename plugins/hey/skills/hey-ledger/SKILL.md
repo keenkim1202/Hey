@@ -71,7 +71,6 @@ python3 "$HEY" add <root> --ledger <path>  # when the ledger lives elsewhere
 python3 "$HEY" add <root> --ledger-log <path>  # prose sections in a second file
 |---|---|
 | `## Notes` / `## 메모` | `/hey` inserts under today's date |
-| `## PR log` / `## PR 기록` | `/hey-sync` appends rows |
 | `## Work log` / `## 작업 로그` | `/seeya` inserts under today's date |
 | `### Next up` / `### 다음 착수 순서` | `/hey-sync` reorders; `/wassup` and `/seeya` read |
 | `## Summary` / `## 진행 요약` | `/hey-sync` fills the totals |
@@ -200,7 +199,7 @@ default alone unless the user asks.
 | `/hey` | capture a note right now, with date, branch and files attached |
 | `/hey-plan` | turn a spec into a checklist with MD and AI estimates |
 | `/hey-tune` | adjust estimates with the user, recording why |
-| `/hey-sync` | update the ledger — checks, totals, PR log, next-up order |
+| `/hey-sync` | update the ledger — checks, totals, next-up order |
 | `/hey-run` | run a scoped loop of items and report a summary |
 | `/next` | brief the single next item and ask whether to start it |
 | `/hey-recap` | weekly review — burndown, carry-over, estimate variance |
