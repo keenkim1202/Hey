@@ -56,7 +56,6 @@ tomorrow I go looking for yesterday's half-finished work all over again.
 📋 Progress
    Checklist   3 / 13 boxes closed
    Effort      0.4 / 5.6 AI-days closed   5.2 left · 1.0 in progress
-   This week   0.6 / 5.0 AI-days          2.4 behind pace (Mon-Fri)
 
 📈 Output  08-04 (Tue)
    closed   0.00 AI-days        best 1.64 AI-days on 07-29 (Wed)
@@ -81,9 +80,8 @@ tomorrow I go looking for yesterday's half-finished work all over again.
    · How search results should rank
 ```
 
-Seven emoji mark the sections, and they are the only ones the card uses. **This week**
-appears once a weekly goal is set, and **Output** once there are recorded days to compare
-against — a fresh install shows neither.
+Seven emoji mark the sections, and they are the only ones the card uses. **Output**
+appears once there are recorded days to read from — a fresh install shows none.
 
 The numbers come from scripts, not from the model reading and adding things up. The
 judgement underneath them — what to pick up, what to skip, what is actually blocked — is
@@ -363,15 +361,6 @@ register it; to change it, edit `config.json` or re-register with `--base <branc
 Token counts are read from the Claude Code transcripts under `~/.claude/projects`, which are
 only ever read. Point `HEY_TRANSCRIPTS` elsewhere if yours live somewhere else.
 
-**Goals are per project.** Several registered projects each get their own weekly and daily
-target, because one shared number measured against a fraction of the work makes every
-project look behind. There is no goal until you set one, and the card's **This week** row
-stays hidden until then:
-
-```bash
-python3 plugins/hey/scripts/board.py goal --set 5.0
-```
-
 When something reports nothing and it is not obvious why, ask for a checkup. It reports
 the base branch, missing ledger headings, items with no estimate and a damaged history
 file — each of which otherwise shows up as an empty answer rather than an error.
@@ -394,7 +383,7 @@ plugins/hey/
 ├── commands/hey.md       /hey, the note capture command
 ├── scripts/
 │   ├── hey.py            ledger parsing, aggregation, recording
-│   ├── board.py          daily output, leaderboards, the two cards
+│   ├── board.py          the daily record and the two cards
 │   ├── strings.py        every user-facing string, per language
 │   └── selftest.py       static checks, then every command against a fixture
 ├── hooks/hooks.json      when the session-start hook fires

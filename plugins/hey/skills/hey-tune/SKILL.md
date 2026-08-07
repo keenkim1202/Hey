@@ -21,7 +21,6 @@ Never tune on instinct. Look at how finished items compared to their estimates.
 ```bash
 python3 "$HEY" variance
 python3 "$HEY" carryover --days 3
-python3 "$BOARD" show --window 30
 ```
 
 `variance` measures business days from an item first starting to finishing, against its
@@ -71,12 +70,10 @@ One line directly underneath:
 
 ```bash
 python3 "$HEY" progress
-python3 "$BOARD" goal
 ```
 
 - What the total moved from and to
 - How the calendar conversion shifts, stating utilisation and parallel efficiency
-- Whether the weekly goal needs resetting — propose `board.py goal --set` and confirm first
 
 ## 5. Correcting a multiplier itself
 

@@ -137,12 +137,12 @@ python3 "$HEY" progress --phases            # boxes, estimates, per-phase rows
 python3 "$BOARD" collect                    # record today's closed/code/token totals
 python3 "$BOARD" brief                      # morning card, one call
 python3 "$BOARD" wrap                       # end-of-day card, one call
-python3 "$BOARD" goal --set 5.0 --daily 0.4 # this project's weekly and daily targets
 ```
 
-**Goals belong to a project, not to the machine.** `goal --set` writes to whatever is in
-scope, so with several projects registered set each one separately rather than sharing one
-number across all of them.
+**There is no goal, streak, rank or board.** Days used to be scored against each other
+here. Closed AI-days rest on estimates the tool cannot calibrate, and code and tokens
+measure activity rather than accomplishment, so every one of those numbers dressed a
+bookkeeping choice as a result. What is recorded is still recorded; nothing ranks it.
 
 Prefer `brief` and `wrap` over firing the individual commands. They exist because ten
 separate calls cost ten round trips and ten blocks of output in the context window.
@@ -161,9 +161,8 @@ gives exact code and token numbers from git and the transcripts, but **closed wo
 as 0**. Do not hide that from the user.
 
 The **first record of a project is a baseline** and carries no closed figure at all — it
-prints `baseline` instead of a number, and it is excluded from ranking and streaks. Say so
-plainly on day one rather than presenting it as a zero day. From the second record on the
-numbers are real.
+prints `baseline` instead of a number. Say so plainly on day one rather than presenting it
+as a zero day. From the second record on the numbers are real.
 
 ## Language
 

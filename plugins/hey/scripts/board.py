@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""hey board — daily output, leaderboards and the morning/evening cards.
+"""hey board — the daily record and the morning/evening cards.
 
-Three things are counted.
+Three things are counted and written to `stats.jsonl`.
     closed   boxes closed in the ledger that day, converted to AI-days
     code     lines added and removed that day, across every worktree of the project
     tokens   Claude Code transcript usage that day
 
-Ranking compares **only against your own past records**. No user data is ever sent
-or received.
+**None of them is ranked.** Days used to be scored against each other here -- a board,
+a streak, a weekly pace, a personal best. Closed work rests on estimates the tool itself
+cannot calibrate, and code and tokens measure activity rather than accomplishment, so
+every one of those numbers dressed a bookkeeping choice as a result. What is left is the
+record and the two cards that read it back. No user data is ever sent or received.
 """
 
 from __future__ import annotations
@@ -25,13 +28,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, card_width, day_range, die, fmt_date, load_config, merge_stats,
-    clip_to, need_history, project_base, project_setting, projects_in_scope, read_stats,
-    record_progress, save_config, today_str, unpushed, worktree_roots, _sh,
+    clip_to, need_history, project_base, projects_in_scope, read_stats,
+    record_progress, today_str, unpushed, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
-BAR_W = 20
-EIGHTHS = "▏▎▍▌▋▊▉█"
 
 
 # ---------------------------------------------------------------- collection
@@ -167,6 +168,19 @@ METRICS = {
 }
 
 
+def contradicts_zero(row: dict | None) -> bool:
+    """Did this day produce code or tokens while closing no work?
+
+    That pair is the only thing the zero note has to say -- it names two candidate causes,
+    an item sized too large or a box nobody ticked, and both are checkable. On a day that
+    produced nothing at all there is no contradiction to name: the card already says "no
+    record", and adding "work happened" beside it would make one line contradict the other.
+    """
+    if row is None or "earned_ai" not in row or row["earned_ai"]:
+        return False
+    return bool(total_code(row) or total_tokens(row))
+
+
 def short_date(iso: str) -> str:
     """`08-04 (Tue)` for boards. No year."""
     d = date.fromisoformat(iso)
@@ -230,217 +244,21 @@ def cmd_collect(args, cfg):
 # ---------------------------------------------------------------- leaderboard
 
 
-def bar(value: float, top: float, width: int = BAR_W) -> str:
-    if top <= 0:
-        return ""
-    filled = value / top * width
-    full = int(filled)
-    rem = filled - full
-    out = "█" * full
-    if full < width and rem >= 1 / 8:
-        out += EIGHTHS[min(7, int(rem * 8)) - 1] if int(rem * 8) else ""
-    return out
-
-
-# Personality lines live in strings.py, with one pool per language.
 
 
 def flair(kind: str, on: str, **kw) -> str:
     return S.flair(kind, on, LANG, **kw)
 
 
-def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]:
-    """The ranked days, and where today sits among them.
-
-    Two populations, deliberately. The **bars** are the days that produced something: a
-    zero-height row carries no information and only costs a line. The **average** is every
-    day that was measured, zeros included -- leaving them out prints a figure the reader
-    is being invited to compare their day against, computed by discarding the days that
-    would have dragged it down. The row says how many days it covers, because it is not
-    the same count as the rows above it.
-    """
-    label, get, fmt, has = METRICS[metric]
-    # Measured first, produced second. Everything that decides *whether there is anything
-    # to say* keys off the measured days; only the bars key off the ones that produced.
-    measured = [(r["date"], get(r)) for r in rows if has(r)]
-    if not measured:
-        return [S.card("board_none", LANG, label=label)]
-    scored = [(d, v) for d, v in measured if v]
-    # From the measured days: a day recorded as zero has an answer, and printing `-` for it
-    # says the opposite -- that nothing was recorded at all.
-    today_val = next((v for d, v in measured if d == on), None)
-    avg = sum(v for _, v in measured) / len(measured)
-    if not scored:
-        # Every measured day is zero. There are records, so claiming there are none is the
-        # same conflation this function exists to avoid -- but there is nothing to rank and
-        # no bar to draw, so the board collapses to the one statement that is true.
-        opening = S.card("board_today", LANG, label=label,
-                         val=fmt(today_val) if today_val is not None else "-")
-        return [f"{pad(opening, 28)}{S.card('board_all_zero', LANG, n=len(measured))}"]
-    ranked = sorted(scored, key=lambda x: (-x[1], x[0]))
-    peak = ranked[0][1]
-    rank = next((i + 1 for i, (d, _) in enumerate(ranked) if d == on), None)
-
-    shown_val = fmt(today_val) if today_val is not None else "-"
-    head = S.card("board_today", LANG, label=label, val=shown_val)
-    tail = (S.card("board_rank", LANG, rank=rank, n=len(scored)) if rank
-            else S.card("board_window", LANG, n=len(scored)))
-    out = [f"{pad(head, 28)}{tail}", ""]
-    shown = ranked[:top_n]
-    if rank and rank > top_n:
-        shown = ranked[: top_n - 1] + [(on, today_val)]
-    for i, (d, v) in enumerate(shown):
-        pos = next(j + 1 for j, (dd, _) in enumerate(ranked) if dd == d)
-        note = (S.card("board_peak", LANG) if pos == 1
-                else (S.card("board_is_today", LANG) if d == on else ""))
-        out.append(f"{pos:2}  {short_date(d)}  {bar(v, peak):<{BAR_W}}  {rpad(fmt(v), 12)}{note}")
-    # The avg row has no rank or date, so its label is padded to whatever those occupy on
-    # the rows above. A fixed width drifts the moment the date format changes language.
-    lead = _w(f"{1:2}  {short_date(shown[0][0])}  ") - 4
-    out.append(f"{'':4}{pad(S.card('board_avg', LANG, n=len(measured)), lead)}"
-               f"{bar(avg, peak):<{BAR_W}}  {rpad(fmt(avg), 12)}")
-    # No value, or a measured zero. Neither is a day to compare against the peak: the
-    # shortfall lines would read as a near miss, and a zero day gets its own line from the
-    # caller. `board_none` already covered the case where nothing at all was recorded.
-    if not today_val:
-        return out
-    out.append("")
-    if today_val >= peak:
-        out.append(f"{flair('peak', on)}  ({fmt(today_val)})")
-    else:
-        gap = peak - today_val
-        share = today_val / peak if peak else 0
-        kind = "close" if share >= 0.8 else ("mid" if share >= 0.4 else "far")
-        out.append(flair(kind, on, gap=fmt(gap)))
-    return out
 
 
-def cmd_show(args, cfg):
-    """The closed-work board. **Closed work only -- code and tokens are not ranked.**
-
-    Lines of code and token counts measure activity, not accomplishment. A refactor that
-    deletes a bad implementation, a vendored update, a formatting pass, a session that
-    retried three times -- all of them move those numbers, none of them in the direction
-    the number implies. Ranking days by either rewards churn and verbosity, and there is
-    no action to take from "Tuesday was your highest line-count day".
-
-    Both are still collected and both still appear on the card, where they sit as context
-    for reading a day back later. That is the job they do well. This command is the one
-    place they were presented as a contest, and they are no longer in it.
-    """
-    on = args.date or today_str()
-    for p in projects_in_scope(cfg, args.scope, args.project):
-        rows = [r for r in read_stats() if r["project"] == p["name"]]
-        cutoff = (date.fromisoformat(on) - timedelta(days=args.window)).isoformat()
-        rows = [r for r in rows if cutoff <= r["date"] <= on]
-        print(f"[{p['name']}]")
-        for ln in leaderboard(rows, on, "ai", args.top):
-            print(f"  {ln}" if ln else "")
-        # A recorded-but-zero day never gets a bar, so say so explicitly. Only when the day
-        # was actually measured: a baseline carries no closed-work figure at all, and
-        # calling that a zero credits the day with a result nobody recorded.
-        today_row = next((r for r in rows if r["date"] == on), None)
-        _, get, _, has = METRICS["ai"]
-        if today_row and has(today_row) and not get(today_row):
-            print()
-            print(f"  {flair('zero', on)}")
-        context = [m for m in ("code", "tokens") if any(METRICS[m][3](r) for r in rows)]
-        if context:
-            print()
-        for m in context:
-            label, get, fmt, has = METRICS[m]
-            mine = next((get(r) for r in rows if r["date"] == on and has(r)), 0)
-            print(f"  {pad(label, 9)}{fmt(mine)}")
 
 
 # ---------------------------------------------------------------- streak and goals
 
 
-def cmd_streak(args, cfg):
-    for p in projects_in_scope(cfg, args.scope, args.project):
-        rows = [r for r in read_stats() if r["project"] == p["name"] and "earned_ai" in r]
-        if not rows:
-            need_history(p["name"], "the streak", len(rows), 1)
-            continue
-        thr = (args.threshold if args.threshold is not None
-               else project_setting(cfg, p, "daily_goal_ai", 0.3))
-        streak = best = 0
-        for r in rows:
-            if r["earned_ai"] >= thr:
-                streak += 1
-                best = max(best, streak)
-            elif date.fromisoformat(r["date"]).weekday() < 5:
-                streak = 0
-        hit = [r for r in rows if r["earned_ai"] >= thr]
-        print(f"[{p['name']}] against a daily goal of {thr} AI-days")
-        print(f"  {streak} in a row (longest {best}) · hit on {len(hit)}/{len(rows)} days")
-        print("  counted in recorded days - a day `collect` never ran on is not a gap")
-        if streak and streak == best and streak >= 2:
-            print(f"  {S.streak('record', LANG, n=streak)}")
-        elif streak >= 5:
-            print(f"  {S.streak('habit', LANG, n=streak)}")
-        elif streak >= 2:
-            print(f"  {S.streak('rolling', LANG, n=streak)}")
-        elif streak == 1:
-            print(f"  {S.streak('one', LANG)}")
-        elif best >= 2:
-            print(f"  {S.streak('broken', LANG, best=best)}")
 
 
-def cmd_goal(args, cfg):
-    """Read or set the goals. Goals are stored per project, not per machine."""
-    projs = projects_in_scope(cfg, args.scope, args.project)
-    if not projs:
-        die("no project in scope. Register one with `hey.py add <path>`")
-
-    if args.set is not None or args.daily is not None:
-        # Setting a goal is a write, and a write must not fan out because of a config
-        # default. `scope: all` is a *reading* preference -- it widens what the reports
-        # cover -- and inheriting it here overwrote every project's goal with one number,
-        # which is the outcome `project_setting` exists to warn about: one target measured
-        # against each project's slice of the work, so every card looks behind.
-        #
-        # An explicit `--scope all` is a different thing. That is someone asking for it.
-        if len(projs) > 1 and not (args.project or args.scope):
-            names = ", ".join(p["name"] for p in projs)
-            die(f"a goal belongs to one project, and {len(projs)} are in scope ({names}). "
-                f"Pass `--project <name>`, or `--scope all` to mean all of them")
-        for p in projs:
-            if args.set is not None:
-                p["weekly_goal_ai"] = args.set
-            if args.daily is not None:
-                p["daily_goal_ai"] = args.daily
-            bits = [f"weekly {p['weekly_goal_ai']}"] if args.set is not None else []
-            if args.daily is not None:
-                bits.append(f"daily {p['daily_goal_ai']}")
-            print(f"[{p['name']}] goal set: {' · '.join(bits)} AI-days")
-        save_config(cfg)
-        return
-
-    on = date.fromisoformat(args.date or today_str())
-    monday = on - timedelta(days=on.weekday())
-    for p in projs:
-        goal = project_setting(cfg, p, "weekly_goal_ai")
-        if goal is None:
-            print(f"[{p['name']}] no weekly goal set. Use `board.py goal --set 5.0`")
-            continue
-        rows = [r for r in read_stats()
-                if r["project"] == p["name"]
-                and monday.isoformat() <= r["date"] <= on.isoformat()]
-        got = round(sum(r.get("earned_ai", 0) for r in rows), 2)
-        workdays = sum(1 for n in range((on - monday).days + 1)
-                       if (monday + timedelta(days=n)).weekday() < 5)
-        expected = round(goal * workdays / 5, 2)
-        gap = round(got - expected, 2)
-        pace = "ahead" if gap > 0 else ("behind" if gap < 0 else "exactly on pace")
-        print(f"[{p['name']}] this week (Mon {monday.isoformat()} ~ {on.isoformat()})")
-        print(f"  goal {goal} · so far {got} · expected by now {expected}"
-              f" -> {abs(gap)} {pace}")
-        print(f"  {bar(got, goal, 30):<30} {round(got / goal * 100)}%")
-        left = round(goal - got, 2)
-        remaining_days = 5 - workdays
-        if left > 0 and remaining_days > 0:
-            print(f"  {left} left over {remaining_days} day(s) = {round(left / remaining_days, 2)}/day")
 
 
 # ---------------------------------------------------------------- cards
@@ -695,44 +513,26 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             f'{INDENT}{pad(S.card("effort", LANG), W)}'
             f'{pad(S.card("effort_val", LANG, done=done_ai, total=g["total_ai"]), V)}'
             f'{S.card("effort_note", LANG, left=remain, wip=g["wip_ai"])}']
-    goal = project_setting(cfg, p, "weekly_goal_ai")
-    if goal:
-        d = date.fromisoformat(on)
-        monday = d - timedelta(days=d.weekday())
-        got = round(sum(r.get("earned_ai", 0) for r in rows
-                        if monday.isoformat() <= r["date"] <= on), 2)
-        wd = sum(1 for n in range((d - monday).days + 1)
-                 if (monday + timedelta(days=n)).weekday() < 5)
-        exp = round(goal * wd / 5, 2)
-        gap = round(got - exp, 2)
-        pace = S.card("ahead" if gap > 0 else ("behind" if gap < 0 else "on_pace"), LANG)
-        out.append(f'{INDENT}{pad(S.card("week", LANG), W)}'
-                   f'{pad(S.card("week_val", LANG, got=got, goal=goal), V)}'
-                   f'{S.card("week_note", LANG, gap=abs(gap), pace=pace)}')
-
     # -- output
     win = [r for r in rows
            if (date.fromisoformat(focus) - timedelta(days=14)).isoformat() <= r["date"] <= focus]
     if win:
         out += section("results", f'{S.card("results", LANG)}  {short_date(focus)}')
+        # Three figures for the day, and nothing to compare them against. A personal best
+        # survived here after the board, the streak and the rank were taken out, which made
+        # this file claim in its own docstring that days are no longer scored against each
+        # other while still printing the highest one.
         for m in ("ai", "code", "tokens"):
             lbl, get, f, _ = METRICS[m]
-            scored = [(r["date"], get(r)) for r in win if get(r)]
-            mine = next((v for d_, v in scored if d_ == focus), 0)
-            shown = f(mine)
-            line = f"{INDENT}{pad(lbl, 9)}{pad(shown, 20)}"
-            # A personal best is only offered for closed work. Lines of code and tokens are
-            # activity, not accomplishment -- churn and a verbose session both raise them --
-            # so ranking a day by either rewards the wrong move. They stay as context for
-            # reading the day back later, which is a job they do well.
-            if m == "ai" and scored:
-                best = max(scored, key=lambda x: x[1])
-                line += S.card("best_on", LANG, val=f(best[1]), date=short_date(best[0]))
-            out.append(line)
-        scored_ai = [r for r in win if r.get("earned_ai")]
-        if len(scored_ai) >= 2:
-            top = [ln for ln in leaderboard(win, focus, "ai", 3) if ln]
-            out += [f"{INDENT}{ln}" for ln in top[1:-1]]
+            mine = next((get(r) for r in win if r["date"] == focus), 0)
+            out.append(f"{INDENT}{pad(lbl, 9)}{f(mine)}")
+        # The zero line moved here when the board it used to live on was removed. It is the
+        # one piece of commentary that does work, and only in the case `contradicts_zero`
+        # picks out.
+        if contradicts_zero(next((r for r in win if r["date"] == focus), None)):
+            # Folded, not appended: these lines run past 72 columns and the card has a
+            # floor of 72. On the board it used to sit on there was no width contract.
+            out += fold(flair("zero", focus), INDENT, INDENT, limit=2)
 
     # -- what is next
     nxt = led.next_up()
@@ -793,21 +593,6 @@ def main() -> None:
     sp = add("collect", cmd_collect, help="record today's closed/code/token totals")
     sp.add_argument("--date")
     sp.add_argument("--author", help="git author filter (default: git config user.email)")
-
-    sp = add("show", cmd_show, help="leaderboard")
-    sp.add_argument("--date")
-    sp.add_argument("--window", type=int, default=14,
-                    help="how many calendar days back to include. Calendar days, not "
-                         "records - `hey.py rank --window` counts records")
-    sp.add_argument("--top", type=int, default=6)
-
-    sp = add("streak", cmd_streak, help="consecutive days on goal")
-    sp.add_argument("--threshold", type=float)
-
-    sp = add("goal", cmd_goal, help="weekly goal and pace, per project")
-    sp.add_argument("--set", type=float, help="weekly goal in AI-days")
-    sp.add_argument("--daily", type=float, help="daily goal in AI-days, used by `streak`")
-    sp.add_argument("--date")
 
     for name, mode, helptext in (("brief", "brief", "morning card (one call)"),
                                  ("wrap", "wrap", "end-of-day card (one call)")):

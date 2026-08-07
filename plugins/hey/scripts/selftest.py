@@ -319,52 +319,27 @@ gone = Ledger({{'name': 'x', 'ledger': str(main), 'ledger_log': str(tmp / 'nope.
 assert gone.log_path is None and gone.log_days() == []
 """
 
-BOARD_AVG_PROBE = """
+ZERO_NOTE_PROBE = """
 import sys; sys.path.insert(0, {here!r})
-import board as b
+from board import contradicts_zero
 
-# Four days. One baseline, which carries no `earned_ai` at all -- nothing was measured on
-# it, which is not the same as measuring zero. Two that produced, and one recorded as a
-# genuine zero: worked, closed nothing.
-rows = [{{'date': '2026-01-01', 'project': 'x'}},
-        {{'date': '2026-01-02', 'project': 'x', 'earned_ai': 1.0}},
-        {{'date': '2026-01-03', 'project': 'x', 'earned_ai': 0.0}},
-        {{'date': '2026-01-04', 'project': 'x', 'earned_ai': 0.5}}]
+# The note says code went up while the checkboxes did not. It may only appear when that is
+# actually what happened, or the same card says "no record -- no log, no commits" on one
+# line and "work happened" two lines below.
+worked = {{'earned_ai': 0.0, 'code': {{'added': 300, 'deleted': 40}}, 'tokens': {{'out': 900}}}}
+assert contradicts_zero(worked) is True, worked
 
-# The average covers every measured day -- 1.0, 0.0, 0.5 -> 0.50. Dropping the recorded
-# zero gives 0.75, which is a figure the reader is invited to compare their day against,
-# arrived at by discarding the days that would have pulled it down.
-out = chr(10).join(b.leaderboard(rows, '2026-01-04', 'ai', 6))
-assert '0.75' not in out, out
-avg_row = [ln for ln in out.split(chr(10)) if ln.startswith('    ') and '0.50' in ln]
-assert avg_row, out
-# The baseline is excluded from the count, so three days, not four.
-assert '3' in avg_row[0], avg_row[0]
+# An idle day that was recorded is a plain zero and needs no commentary.
+idle = {{'earned_ai': 0.0, 'code': {{'added': 0, 'deleted': 0}}, 'tokens': {{'out': 0}}}}
+assert contradicts_zero(idle) is False, idle
+# So is one recorded before code and tokens were collected at all.
+assert contradicts_zero({{'earned_ai': 0.0}}) is False
 
-# A day recorded as zero has an answer, and the header has to print it. `-` is what the
-# header says when there is no record at all, and the two must not read alike.
-zero = chr(10).join(b.leaderboard(rows, '2026-01-03', 'ai', 6))
-assert '0.00' in zero.split(chr(10))[0], zero.split(chr(10))[0]
-# It is still not a near miss on the record, so no shortfall line is drawn for it.
-assert not any(ln.strip().startswith(('0.', '1.')) and 'AI' not in ln
-               for ln in zero.split(chr(10))[-1:]), zero
-
-# A baseline day has nothing to report, and must not be dressed up as a zero.
-base = chr(10).join(b.leaderboard(rows, '2026-01-01', 'ai', 6))
-assert '-' in base.split(chr(10))[0], base.split(chr(10))[0]
-
-# A window where every measured day is zero has records -- they just all say zero. Reading
-# the empty state off the days that *produced* something reports it as "no records yet",
-# which is the same conflation the rest of this probe is about. There is nothing to rank
-# and no bar to draw, so one line, and it has to carry today's figure and the count.
-flat = [{{'date': '2026-02-0%d' % n, 'project': 'x', 'earned_ai': 0.0}} for n in (1, 2, 3)]
-out = chr(10).join(b.leaderboard(flat, '2026-02-02', 'ai', 6))
-assert '0.00' in out, out
-assert '3' in out, out
-# And a window with no measurement at all still says exactly that.
-none = chr(10).join(b.leaderboard([{{'date': '2026-03-01', 'project': 'x'}}],
-                                  '2026-03-01', 'ai', 6))
-assert '0.00' not in none, none
+# A day that closed something has nothing to explain.
+assert contradicts_zero(dict(worked, earned_ai=0.4)) is False
+# A baseline carries no closed figure, which is not the same as closing nothing.
+assert contradicts_zero({{'code': {{'added': 300, 'deleted': 40}}}}) is False
+assert contradicts_zero(None) is False
 """
 
 CARD_FIT_PROBE = """
@@ -378,12 +353,6 @@ from hey import load_config, today_str
 # language whose labels happen to be wider.
 cfg = load_config()
 p = [x for x in cfg['projects'] if x['name'] == 'fixture'][0]
-
-# Enough days that the average row's own count reaches three digits, which is where its
-# label is longest. The fixture cannot supply these: it has one day carrying closed work,
-# and the card omits the leaderboard below two.
-rows = [{{'date': '2026-%02d-%02d' % (m, d), 'project': 'x', 'earned_ai': 1.0}}
-        for m in (1, 2, 3, 4) for d in range(1, 29)]
 
 # Checked at the floor as well as the default. The floor is the width the rows were sized
 # against, and a column that only just fits at 78 has nowhere to go at 72. `WIDTH` binds at
@@ -401,11 +370,6 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
             assert b._w(line) <= b.WIDTH, (want, mode, b._w(line), b.WIDTH, line)
     # A card that rendered almost nothing would pass the loop above without testing much.
     assert seen > 20, (want, seen)
-
-    board = b.leaderboard(rows, '2026-01-01', 'ai', 6)
-    assert any('112' in ln for ln in board), board
-    for line in board:
-        assert b._w(b.INDENT + line) <= b.WIDTH, (want, b._w(b.INDENT + line), line)
 """
 
 TOKEN_SCOPE_PROBE = """
@@ -446,30 +410,6 @@ assert b.token_usage({{'root': str(sibling)}}, day)['out'] == 500
 # name and `stat` then raises `FileNotFoundError`.
 (tdir / 'dangling.jsonl').symlink_to(home / 'never-existed.jsonl')
 assert b.token_usage({{'root': str(proj)}}, day)['out'] == 10
-"""
-
-RANK_POOL_PROBE = """
-import sys; sys.path.insert(0, {here!r})
-from hey import rank_pool
-
-rows = [{{'date': '2026-01-0%d' % n, 'earned_ai': float(n)}} for n in (1, 2, 3, 4)]
-
-# A past day is ranked against the days before it, not against everything on record. The
-# other way round, that day's rank drifts every time a later day is recorded -- so a rank
-# quoted on Tuesday means something different by Friday.
-assert [r['date'] for r in rank_pool(rows, '2026-01-02', 10)] == \\
-    ['2026-01-01', '2026-01-02'], rank_pool(rows, '2026-01-02', 10)
-
-# The window counts records and takes the most recent of them, which is the difference
-# from `board.py show --window`, where it counts calendar days.
-assert [r['date'] for r in rank_pool(rows, '2026-01-04', 2)] == \\
-    ['2026-01-02', '2026-01-03', '2026-01-04'], rank_pool(rows, '2026-01-04', 2)
-
-# The day itself is always in the pool. Leaving it out is what produced "#5 of 4".
-assert [r['date'] for r in rank_pool(rows, '2026-01-01', 10)] == ['2026-01-01']
-# And a day with no record of its own yields a pool the caller can see is missing it.
-assert [r['date'] for r in rank_pool(rows, '2026-01-09', 10)] == \\
-    ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04']
 """
 
 AGE_MARK_PROBE = """
@@ -569,10 +509,11 @@ def _frontmatter(path: Path) -> dict | None:
 
 PLACEHOLDER = re.compile(r"{(\w+)}")
 
-# What each FLAIR pool's caller actually passes. `board.flair` forwards `gap=` only on the
-# three shortfall pools; `peak` and `zero` are called with nothing. A line reaching for
-# anything else raises `KeyError` at format time, in one language, on one kind of day.
-FLAIR_ARGS = {"peak": set(), "close": {"gap"}, "mid": {"gap"}, "far": {"gap"}, "zero": set()}
+# What each FLAIR pool's caller actually passes. Only `zero` is left -- the shortfall pools
+# restated a gap the bars beside them already showed, and the bars are gone -- and the card
+# calls it with nothing. A line reaching for anything else raises `KeyError` at format time,
+# in one language, on one kind of day.
+FLAIR_ARGS = {"zero": set()}
 
 
 def string_pack_checks() -> list:
@@ -591,7 +532,7 @@ def string_pack_checks() -> list:
     """
     out = []
     langs = sorted(S.WEEKDAYS)
-    packs = {"CARD": S.CARD, "FLAIR": S.FLAIR, "STREAK": S.STREAK,
+    packs = {"CARD": S.CARD, "FLAIR": S.FLAIR,
              "METRIC_LABELS": S.METRIC_LABELS, "UNITS": S.UNITS,
              "STATE_LABELS": S.STATE_LABELS}
 
@@ -618,7 +559,7 @@ def string_pack_checks() -> list:
     if not full:
         return out
 
-    for name, pack in (("CARD", S.CARD), ("STREAK", S.STREAK)):
+    for name, pack in (("CARD", S.CARD),):
         for key, text in pack[full[0]].items():
             want = set(PLACEHOLDER.findall(text))
             for lc in full[1:]:
@@ -640,7 +581,6 @@ def string_pack_checks() -> list:
 
     src = "\n".join((HERE / f).read_text() for f in ("hey.py", "board.py"))
     named = [(r"\bS\.card\(\s*[\"']([a-z_]+)[\"']", "S.card", S.CARD),
-             (r"\bS\.streak\(\s*[\"']([a-z_]+)[\"']", "S.streak", S.STREAK),
              (r"\bflair\(\s*[\"']([a-z_]+)[\"']", "flair", S.FLAIR)]
     for pattern, label, pack in named:
         for key in sorted(set(re.findall(pattern, src))):
@@ -776,11 +716,9 @@ def main() -> int:
         "blocker word boundaries": BLOCKER_PROBE.format(here=str(HERE)),
         "blocker age marks are distinct and never draw wide":
             AGE_MARK_PROBE.format(here=str(HERE)),
-        "rank: a past day is ranked against earlier days only":
-            RANK_POOL_PROBE.format(here=str(HERE)),
-        "leaderboard: zero days count toward the average": BOARD_AVG_PROBE.format(
-            here=str(HERE)),
         "every rendered card row fits the card": CARD_FIT_PROBE.format(here=str(HERE)),
+        "the zero note only fires when it has something to explain":
+            ZERO_NOTE_PROBE.format(here=str(HERE)),
         "tokens are charged to a project by path, not by string prefix":
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
     }
@@ -819,12 +757,6 @@ def main() -> int:
         # the ledger holds only today, so it would move the baseline and zero the newer day.
         ([board, "collect", "--date", two_days_ago], "collect: a past day keeps its hands off "
          "box state", "not collected - a later day is already recorded"),
-        ([hey, "rank"], "rank"),
-        # `--window` counts records here and calendar days in `board.py show`, both named
-        # the same and both defaulting to 14. Naming the span is what stops the two
-        # commands reading as answers about the same stretch of time.
-        ([hey, "rank"], "rank: names the span it ranked inside", "ranked against records "
-         "back to"),
         ([hey, "carryover", "--days", "1"], "carry-over"),
         # The blocker is dated 2020 on its own line, and the fixture has two days of
         # history. Reading the age off the records would call it a day or two old; the
@@ -838,16 +770,6 @@ def main() -> int:
         ([hey, "item", "P0"], "item: an ambiguous key lists the matches", "matches 5 items"),
         ([hey, "item", "nope"], "item: no match says so", "no item matches"),
         ([hey, "burndown"], "burndown"),
-        ([board, "show"], "board: closed"),
-        # Code and tokens still appear, as plain context lines under the board rather
-        # than as boards of their own. There is no `--metric` to rank them with.
-        ([board, "show"], "board: code and tokens as context, not a contest",
-         S.METRIC_LABELS[args.lang]["code"]),
-        ([board, "streak"], "streak"),
-        ([board, "goal", "--set", "5.0", "--daily", "0.4"], "set goal: per project",
-         "weekly 5.0 · daily 0.4"),
-        ([board, "goal"], "goal pace"),
-        ([board, "streak"], "streak: uses the project's daily goal", "goal of 0.4"),
         ([board, "brief"], "morning card"),
         ([board, "wrap"], "evening card"),
         ([hey, "blockers"], "blockers: lists them all", "5 blocked"),
@@ -1046,12 +968,24 @@ def main() -> int:
         git("commit", "-q", "--allow-empty", "-m", f"develop {n}")
     git("push", "-q", "origin", "develop")
     # `doctor` tells you to re-add whenever the base is wrong, so this is a path users are
-    # actively sent down. It used to rebuild the entry from scratch, which deleted the
-    # goals set earlier in this run -- following the advice destroyed data.
+    # actively sent down. It used to rebuild the entry from scratch, discarding everything
+    # `add` does not manage -- following the advice destroyed settings. Nothing in the
+    # config is optional any more, so the property is observed with a key `add` has never
+    # heard of, which is also the case that matters: a field added in a later version.
+    cfg_path = home / "config.json"
+    cfg_now = json.loads(cfg_path.read_text())
+    for entry in cfg_now["projects"]:
+        if entry["name"] == "fixture":
+            entry["invented_later"] = "keep me"
+    cfg_path.write_text(json.dumps(cfg_now, ensure_ascii=False, indent=2) + "\n")
     code, out = run([hey, "add", str(proj), "--name", "fixture", "--base", "main"],
                     env, proj)
     check("add: re-adding says so, and names what it carried forward",
-          code == 0 and "updated: fixture" in out and "kept:" in out, out)
+          code == 0 and "updated: fixture" in out and "kept:   invented_later" in out, out)
+    kept = [e for e in json.loads(cfg_path.read_text())["projects"]
+            if e["name"] == "fixture"][0]
+    check("add: a setting it does not manage survives the re-add",
+          kept.get("invented_later") == "keep me", kept)
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: flags a base the working branch has left behind",
           "If `develop` is what work merges into" in out, out)
@@ -1083,23 +1017,6 @@ def main() -> int:
     # splits the day in two, and `notes` reads them back per date.
     check("note: a second note the same day joins today's heading",
           body.count(f"### {today}") == 1 and "second note" in body, body)
-
-    # Two projects are registered by now and the scope was set to `all` well before this
-    # point, so `goal --set` inherits it. Setting a goal is a write, and inheriting a
-    # reading preference used to overwrite every project's target with one number.
-    code, out = run([board, "goal", "--set", "9.0"], env, proj)
-    check("goal: refuses to write one number across every project in scope",
-          code != 0 and "belongs to one project" in out, out)
-    code, out = run([board, "goal", "--set", "9.0", "--project", "split"], env, proj)
-    check("goal: named project, and it lands", code == 0 and "[split]" in out, out)
-    goals = {p["name"]: p.get("weekly_goal_ai")
-             for p in json.loads((home / "config.json").read_text())["projects"]}
-    check("goal: the other project keeps the goal it already had",
-          goals.get("fixture") == 5.0 and goals.get("split") == 9.0, goals)
-    # Asking for all of them explicitly is a different thing, and still works.
-    code, out = run([board, "goal", "--set", "1.0", "--scope", "all"], env, proj)
-    check("goal: an explicit --scope all sets them together",
-          code == 0 and out.count("goal set:") == 2, out)
 
     # This project is not a git repository, so the remote cannot be inspected and detection
     # comes back with nothing. The base already on record is kept -- and has to be reported

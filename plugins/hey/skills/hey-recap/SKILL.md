@@ -22,9 +22,6 @@ python3 "$HEY" progress
 python3 "$HEY" burndown --days 14
 python3 "$HEY" carryover --days 3
 python3 "$HEY" variance
-python3 "$BOARD" show --window 14
-python3 "$BOARD" streak
-python3 "$BOARD" goal
 python3 "$HEY" log --limit 7
 python3 "$HEY" notes --since 7
 ```
@@ -85,18 +82,19 @@ correct, not a bug — do not describe those items as instant wins.
 
 ### Output
 
-One board — closed work — and code and tokens as plain context beneath it.
+Three figures for the day, and nothing to compare them against.
 
 ```
-closed   best 1.20 on 08-01   avg 0.64   4-day streak   0.4 behind goal
+closed   0.85 AI-days
 code     1,204 lines
 tokens   1.9M tokens
 ```
 
-**There is no best day for code or tokens, and do not invent one.** Both measure activity,
-not accomplishment: a refactor that deletes a bad implementation and a session that retried
-three times each move them, in the direction that looks like more. They are here to say
-what shape the week had, not to be won.
+**There is no best day, no rank and no streak. Do not invent one.** Closed work rests on
+estimates the tool cannot calibrate; code and tokens measure activity rather than
+accomplishment, since a refactor that deletes a bad implementation and a session that
+retried three times each push them up. These say what shape the week had. They are not
+scores, and comparing them across days reads a bookkeeping choice as a result.
 
 **Call out where the three disagree.** Substantial code and token counts with zero closed
 work means the work happened but no item closed. That is one of two causes — items sized
