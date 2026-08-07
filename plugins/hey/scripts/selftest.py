@@ -152,23 +152,10 @@ for val in (str(hey.CARD_MIN), '96', str(hey.CARD_MAX)):
     # The progress rows are why the floor is 72: labels alone take a fixed 51 columns.
     assert b.WIDTH - 60 >= 12, (val, b.WIDTH)
 
-# Reading the session's pty is allowed to come up empty -- a CI runner has no tty in its
-# ancestry -- but never to raise, and never to answer with something unusable.
-cols = hey.terminal_columns()
-assert cols is None or (isinstance(cols, int) and cols > 0), cols
-
-# `doctor` offers a wider card only when one is reachable. At the ceiling, or on a terminal
-# no wider than the card already is, there is nothing to act on and it must stay quiet --
-# a warning the user cannot clear is noise that trains them to ignore the rest. This calls
-# the real decision rather than restating it, or a broken ceiling would still pass here.
-w = hey.wider_card_available
-assert w(78, 154) == hey.CARD_MAX, w(78, 154)   # capped at the ceiling, not 152
-assert w(78, 100) == 98, w(78, 100)
-assert w(hey.CARD_MAX, 154) is None, 'at the ceiling there is nothing to suggest'
-assert w(78, 80) is None, 'a standard terminal already fits the default'
-assert w(hey.CARD_MIN, 72) is None, 'a terminal narrower than the floor cannot help'
-assert w(78, None) is None, 'no reading means no suggestion'
-assert w(78, 0) is None, 'a zero reading is not a suggestion'
+# Width resolution is now the whole of it: an environment variable, a clamp, a default.
+# There is no terminal probing left to test -- see the note on `card_width`.
+assert not hasattr(hey, 'terminal_columns'), 'terminal probing came back'
+assert not hasattr(hey, 'wider_card_available'), 'the width nag came back'
 """
 
 SHARE_PROBE = """

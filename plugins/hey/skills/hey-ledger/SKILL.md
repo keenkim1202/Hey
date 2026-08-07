@@ -172,73 +172,24 @@ English is the default. To switch, set `"lang": "ko"` in `~/.hey/config.json` or
 
 ## Card width
 
-The card is 78 columns by default, and `HEY_WIDTH` widens it to at most 120. On a wide
-terminal that is worth setting: lines fold less, and fewer descriptions get clipped to a
-`…`. `doctor` prints the width in effect and where it came from.
+The card is 78 columns by default. `HEY_WIDTH` overrides that, clamped to 72-120, and
+`doctor` prints the width in effect and where it came from.
 
-**Start from `doctor`, not from a probe of your own.** It reports the width in effect, and
-warns with a number when the terminal has room the card is not using:
-
-```
-ok    card width 78 (default)
-warn  terminal looks 154 columns wide, so the card could be 120 instead of 78.
-      Confirm the usable width, then set HEY_WIDTH
-```
-
-That number comes from walking up the process tree to the pty the session hangs off and
-asking it directly — the only probe here that returns a real reading. **Confirm it before
-writing it anywhere.** It is the window's width, not the width of the fenced block you
-paste a card into, and those can differ wherever the UI adds padding of its own.
-
-**Never ask the user to run `tput cols` and report the number back.** That question looks
-like it delegates the measurement, and it does not: their shell in this session is the same
-shell as yours, so they get the same `80` fallback you would. Acting on it sets an
-80-column card on a 154-column terminal, and every step of getting there looked reasonable.
-Working out that you cannot measure the width is the easy half; not replacing it with a
-question that returns a wrong answer is the half that goes wrong.
-
-Every probe you would reach for fails, each in its own misleading way:
-
-| Probe | What you get |
-|---|---|
-| `tput cols` | `80` — its fallback, whatever the terminal really is |
-| `shutil.get_terminal_size()` | `columns=80` — the same fallback |
-| `os.get_terminal_size()` | `Inappropriate ioctl for device` |
-| `stty size` | fails with `stdin isn't a terminal`, exit 1 |
-| `tty` | `not a tty` |
-| `echo $COLUMNS` | `0` — a number, and a useless one |
-
-`sys.stdout.isatty()` is `False`, and that is the one honest answer in the set: it says
-there is nothing on *this* end to measure.
-
-Do not set a width off any of those numbers, and note that they mislead in *different*
-directions. A command that errors looks broken, which makes the one answering `80` look
-like it measured something. `0` looks like a value you could pass straight through, and
-`HEY_WIDTH=0` is accepted — `isdigit()` takes it, then the floor clamps it to 72.
-
-If the user says the proposed number is off, or `doctor` had none to offer, measure by
-asking. Print a ruler in a fenced block and have them read it back:
-
-```bash
-python3 -c "
-N=240
-print(''.join(str(t*10).rjust(10) for t in range(1, N//10+1)))
-print(''.join(str((i+1)%10) for i in range(N)))
-"
-```
-
-Ask which number is the last one visible before the line wraps. That measures the width
-**inside a fenced code block**, which is the only number that matters — a card you paste
-into the reply is bounded by the block, not by the terminal. Then set `HEY_WIDTH` a little
-under what they report, to leave room for the margin, and put it in the `env` block of
-`~/.claude/settings.json` so it survives the session:
+That is the whole feature. If a card looks too narrow for the terminal, set `HEY_WIDTH`
+in the `env` block of `~/.claude/settings.json` so it survives the session:
 
 ```json
 "env": { "HEY_WIDTH": "120" }
 ```
 
-Setting `HEY_WIDTH` turns terminal detection off, so a user who often resizes is better
-off leaving it unset and letting the card measure a real terminal on its own.
+**Do not try to measure the terminal.** Every probe available from here returns a
+fallback rather than a reading -- `tput cols` and `shutil.get_terminal_size()` both say
+`80` whatever the terminal is, `stty size` fails outright, and `$COLUMNS` reads `0`.
+Asking the user to run one of those does not delegate the measurement: their shell in
+this session is the same shell as yours, so the answer is the same fallback. The number
+that actually matters is the width of the fenced block a card is pasted into, which is
+not the terminal's width either. Nothing here depends on getting it right, so leave the
+default alone unless the user asks.
 
 ## Skill map
 
