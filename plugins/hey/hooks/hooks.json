@@ -1,5 +1,5 @@
 {
-  "description": "hey — at session start, report only work sitting uncommitted with no PR",
+  "description": "hey — at session start, report only work that is uncommitted, or committed where no remote has it",
   "hooks": {
     "SessionStart": [
       {

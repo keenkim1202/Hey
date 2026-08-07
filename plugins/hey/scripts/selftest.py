@@ -817,6 +817,12 @@ def main() -> int:
         ([hey, "dirty", "--base", "nope"], "dirty: unresolved base is not silent",
          "were NOT checked"),
         ([hey, "batch"], "loop candidates"),
+        # The overlap signal compares backtick tokens in the item text, so it cannot see a
+        # shared file under another name, a generated output, or a manifest both items
+        # touch. `/hey-run` says never to decide from it alone -- and the script used to
+        # print "these can run in parallel", overruling its own skill.
+        ([hey, "batch"], "batch: reports absent evidence, not a parallel-safe verdict",
+         "no overlap evidence in the item text"),
         ([hey, "context", "--date", today], "context"),
         ([board, "collect", "--date", yesterday], "collect (yesterday)", "baseline"),
         ([board, "collect", "--date", today], "collect (today)"),

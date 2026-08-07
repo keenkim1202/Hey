@@ -1579,7 +1579,13 @@ def cmd_batch(args, cfg):
                     print(f"    {cand[a]['title']} × {cand[b]['title']}"
                           f"  → {', '.join(sorted(shared)[:4])}")
         if not found:
-            print("    none - by item text these can run in parallel")
+            # Absence of evidence, stated as absence of evidence. This compares backtick
+            # tokens in the item text, so it cannot see a shared file under a different
+            # name, a generated output, or a manifest both items touch -- and `/hey-run`
+            # says in as many words never to decide from this output alone. Printing "these
+            # can run in parallel" was the script overruling its own skill.
+            print("    no overlap evidence in the item text. Read the code before "
+                  "running these together")
 
 
 def match_marker(keys, marker: str) -> tuple:

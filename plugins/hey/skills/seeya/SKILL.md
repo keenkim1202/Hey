@@ -13,22 +13,18 @@ BOARD="$ROOT/scripts/board.py"
 HEY="$ROOT/scripts/hey.py"
 ```
 
-## 1. One call for the card
+**Write first, then read.** The card reports today's work log and today's recorded
+output, so a card printed before those exist reports neither — it falls back to raw
+commits and shows no closed work at all. So the order below is: write the log, record the
+output, and only then render the card.
+
+The card is still **the first thing in your reply**. Generated last, shown first.
 
 ```bash
 LC_TIME=C date "+%Y-%m-%d (%a)"
-python3 "$BOARD" wrap
 ```
 
-`wrap` gathers today's commits, loose worktrees, today's notes, progress, weekly pace,
-the board and blockers in one pass. Use it instead of the individual commands.
-
-**Then paste what it printed, verbatim, in a fenced code block, as the first thing in
-your reply.** The user does not see tool output; a card you only summarise is a card they
-never saw. Reproduce it exactly — no re-headed markdown, no rebuilt table, no dropped
-section. Everything you write goes underneath it.
-
-## 2. Write today into the work log
+## 1. Write today into the work log
 
 **Newest first.** Insert directly under the work-log heading. Never delete a past day.
 
@@ -63,10 +59,11 @@ Today's notes are evidence too. Processed notes become results; unprocessed ones
 carry-overs. A note is not a log entry by itself.
 
 Checking boxes and recomputing totals is **not this skill's job — hand that to
-`/hey-sync`**. But `collect` reads box state, so if items closed today, ask whether to run
-`/hey-sync` first.
+`/hey-sync`**. But `collect` reads box state, and it runs in the next step, so **if items
+closed today, ask about `/hey-sync` now.** Afterwards the day is recorded and a late box
+does not backfill into it.
 
-## 3. Record the output
+## 2. Record the output
 
 ```bash
 python3 "$BOARD" collect
@@ -80,20 +77,38 @@ Three things get counted:
 | code | lines added and removed today, across every worktree of the project |
 | tokens | Claude Code transcript usage today. Cache reads excluded |
 
-`collect` prints the board again with today's row filled in. **Paste that block verbatim
-too** — it is the one part of the wrap-up that did not exist when you printed the card.
-Report the numbers **as printed**.
+`collect` writes the day into `~/.hey/stats.jsonl` and prints a four-line receipt — not a
+board, and not the card's Output section:
 
 ```
- Output  08-05 (Wed)
-   closed   0.85 AI-days        best 1.20 on 08-01 (Fri)
-   code     1,204 lines         best 3,918 lines on 08-01 (Fri)
-   tokens   1.9M                best 4.2M on 07-30 (Thu)
+[orchard] 2026-08-05 (Wed) recorded
+  closed  0.85 AI-days
+  code    +812 -392 (7 commits)
+  tokens  1.9M (241 turns)
 ```
+
+This receipt is confirmation for you, not output for the user; the card in step 3 carries
+the same numbers in the shape they should read them. Report the figures **as printed** and
+never recompute one.
 
 **A closed value of 0 is a real 0.** It means no box closed today. If code went up
 anyway, ask whether there is a subitem that should have been closed, or whether items are
 sized too large. **Never substitute another metric to make the day look productive.**
+
+## 3. One call for the card
+
+```bash
+python3 "$BOARD" wrap
+```
+
+Last, so it sees the log from step 1 and the record from step 2. `wrap` gathers today's
+log, loose worktrees, today's notes, progress, weekly pace, the output board and blockers
+in one pass. Use it instead of the individual commands.
+
+**Paste what it printed, verbatim, in a fenced code block, as the first thing in your
+reply.** The user does not see tool output; a card you only summarise is a card they never
+saw. Reproduce it exactly — no re-headed markdown, no rebuilt table, no dropped section.
+Everything you write goes underneath it.
 
 ## 4. Preview tomorrow
 
