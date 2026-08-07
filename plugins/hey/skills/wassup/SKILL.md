@@ -37,12 +37,18 @@ Only reach for these when the card raises a specific question:
 
 ```bash
 python3 "$HEY" context --date <yesterday>   # which files were touched, in detail
-python3 "$HEY" carryover --days 3           # stuck for 3+ consecutive recorded days
-python3 "$HEY" batch                        # what could run in parallel
+python3 "$HEY" carryover --days 3           # aged blockers, and items seen unfinished 3+ times
+python3 "$HEY" batch                        # overlap evidence between candidate items
 ```
 
-`carryover` counts **recorded days, not calendar days** — a day nothing was recorded on is
-not a gap. Report it the way the script phrases it.
+`carryover` leads with blocker age in **calendar days**, which is the sound number: a
+`[since]` date holds even with no recorded history and survives an item being renamed.
+
+Its second half counts **observations, not days** — six means the item was seen unfinished
+in six consecutive recorded snapshots, and nothing checks the dates between them, so six
+observations can span two months. Say "observations" or "snapshots". And say *unfinished*,
+not *stuck*: the count comes from the WIP state alone, so an item whose boxes closed every
+day still appears. Report it the way the script phrases it.
 
 ## 2. What to write underneath the card
 

@@ -5,7 +5,7 @@
 
          🕘 Yesterday   Theme bundler swapped to esbuild (#20)
          🔧 Pick up     wt-checkout  1 commit(s) unpushed
-         📋 Checklist   3 / 13 boxes      ████░░░░░░░░░░░░░░
+         📋 Checklist   3 / 13 boxes closed
          🎯 Today       AI 0.4 of 1.0     two subitems you can close
 ```
 
@@ -54,14 +54,14 @@ tomorrow I go looking for yesterday's half-finished work all over again.
    · wt-checkout  feat/toc-anchors  1 commit(s) unpushed
 
 📋 Progress
-   Checklist   3 / 13 boxes closed        (23.1%)  ████░░░░░░░░░░░░░░
+   Checklist   3 / 13 boxes closed
    Effort      0.4 / 5.6 AI-days closed   5.2 left · 1.0 in progress
    This week   0.6 / 5.0 AI-days          2.4 behind pace (Mon-Fri)
 
 📈 Output  08-04 (Tue)
    closed   0.00 AI-days        best 1.64 AI-days on 07-29 (Wed)
-   code     38,330 lines        best 38,330 lines on 08-04 (Tue)
-   tokens   1.9M tokens         best 4.2M tokens on 07-30 (Thu)
+   code     38,330 lines
+   tokens   1.9M tokens
     1  07-29 (Wed)  ████████████████████  1.64 AI-days  peak
     2  07-30 (Thu)  █████████▊            0.80 AI-days
     3  08-03 (Mon)  ███████▎              0.60 AI-days
@@ -231,19 +231,28 @@ reports what share of it sits at 1x.
 | code | lines added and removed, across every worktree of the project |
 | tokens | Claude Code transcript usage, across every worktree. Cache reads excluded |
 
-Ranking compares **against your own past records**. No user data is sent or received.
+**Only closed work is ranked**, and only against your own past records. No user data is
+sent or received.
 
 ```
-Today  code 41,204 lines    #1 of last 4 days
+Today  closed 1.64 AI-days    #1 of last 4 days
 
- 1  08-05 (Wed)  ████████████████████  41,204 lines  peak
- 2  08-04 (Tue)  ██████████████████▌   38,330 lines
- 3  08-03 (Mon)  ██████▏               12,846 lines
- 4  07-31 (Fri)  ████▌                  9,356 lines
-    avg          ████████████▎         25,434 lines
+ 1  08-05 (Wed)  ████████████████████  1.64 AI-days  peak
+ 2  08-04 (Tue)  ██████████████████▌   1.52 AI-days
+ 3  08-03 (Mon)  ██████▏               0.51 AI-days
+ 4  07-31 (Fri)  ████▌                 0.37 AI-days
+    avg of 4     ████████████▎         1.01 AI-days
 
-Peak. Competent for exactly one day.  (41,204 lines)
+Peak. Competent for exactly one day.  (1.64 AI-days)
+
+  code     41,204 lines
+  tokens   1.9M tokens
 ```
+
+Code and tokens are counted and shown, never ranked. Both measure activity rather than
+accomplishment — a refactor that deletes a bad implementation and a session that retried
+three times each push them up — so there is no best day for either, and no action to take
+from one.
 
 The very first record is a **baseline** and carries no closed figure. There is no earlier
 day to compare it against, so counting its closed boxes would credit work finished before

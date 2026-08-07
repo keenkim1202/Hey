@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE))
 import strings as S  # noqa: E402
 LEDGER = """# fixture ledger
 
-**Progress (boxes): 0/0 (0%)**
+**Progress (boxes): 0/0**
 
 > Last synced: 2026-01-01 · main `0000000` · no open PRs
 
@@ -908,6 +908,21 @@ def main() -> int:
     code, out = run([hey, "carryover", "--days", "1"], env, proj)
     check("carry-over: a future `[since]` is not aged from the records",
           "Not yet" not in out, out)
+    # A `[since]` age survives a missing snapshot and a renamed item; the carried-over
+    # count survives neither, since its key is `<phase>|<title>`. The weaker signal must
+    # not sit above the stronger one, where it reads as the headline.
+    blockers_at = out.find("long-standing blockers")
+    unchanged_at = out.find("observed unfinished")
+    check("carry-over: blocker age is reported above the carried-over count",
+          blockers_at != -1 and (unchanged_at == -1 or blockers_at < unchanged_at), out)
+    # The unit is snapshots. Calling them days is wrong whenever `collect` skipped one,
+    # which is most weeks. Checked on the item rows themselves, where a reader glancing at
+    # the number would take the unit from.
+    rows_after = out.split("observed unfinished")[-1].split("\n")[1:] if unchanged_at != -1 else []
+    item_rows = [ln for ln in rows_after if ln.strip().startswith("- ")]
+    check("carry-over: the carried-over unit is observations, not days",
+          bool(item_rows) and all("observations" in ln and "days" not in ln
+                                  for ln in item_rows), item_rows or out)
 
     # The session-start hook is the only always-on component, and silence is its default.
     # With no stdin it falls back to the cwd, which is what these two cases exercise.

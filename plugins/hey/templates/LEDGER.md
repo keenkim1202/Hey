@@ -1,6 +1,7 @@
 # <project> work ledger (local only)
 
-**Progress (boxes): 0/0 (0%)** — every checkbox in this file.
+**Progress (boxes): 0/0** — every checkbox in this file. A count, not a completion
+rate: one box may be a typo fix and the next a subsystem.
 
 **Progress (estimate): 0.0 / 0 AI-days closed · 0 in progress · 0 left**
 

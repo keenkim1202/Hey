@@ -1170,7 +1170,25 @@ def cmd_rank(args, cfg):
 
 
 def cmd_carryover(args, cfg):
-    """Items stuck in progress across snapshots, and blockers that have aged."""
+    """Blockers that have aged, and items observed unfinished across snapshots.
+
+    **Blockers come first, because their age is the sounder of the two numbers.** A dated
+    `[since]` survives a machine with no history at all and survives an item being renamed.
+    The carried-over count survives neither: it needs an unbroken run of snapshots, and the
+    key it tracks is `<phase>|<title>`, so editing a title silently restarts the count at
+    zero. A weaker signal printed above a stronger one gets read as the headline.
+
+    The carried-over unit is **observations, not days.** A run of six means the item was
+    seen unfinished in six consecutive recorded snapshots, and nothing here looks at the
+    dates between them -- a gap does not break a run, so six observations can span two
+    months. What breaks a run is a sample where the item is not in progress, or a title
+    edit, since the key is `<phase>|<title>`. Everything here says "observations" for that
+    reason; "days" is reserved for the blocker ages, which really are calendar days.
+
+    And *unfinished*, never *unchanged*: the run is computed from the WIP state alone, so
+    an item whose boxes closed steadily all week still counts every snapshot. Saying it
+    was unchanged would assert something nothing here measured.
+    """
     for p, led in _each(args, cfg):
         rows = [r for r in read_stats()
                 if r["project"] == p["name"] and r.get("items")]
@@ -1221,19 +1239,25 @@ def cmd_carryover(args, cfg):
                             "records"))
         old.sort(key=lambda x: -x[1])
         aged = [x for x in old if x[1] >= args.days]
-        # The unit is **snapshot count**, not calendar days. Days with no snapshot are not counted.
         span = f"{rows[0]['date']} ~ {rows[-1]['date']}"
         print(f"[{p['name']}]  {len(rows)} snapshots ({span})")
-        if stale:
-            print(f"  in progress for {args.days}+ consecutive snapshots:")
-            for k, n in stale:
-                print(f"    - {k}  ({n} in a row)")
+        # Blockers first: a `[since]` age is a calendar fact that survives both a missing
+        # snapshot and a renamed item, and the count below survives neither.
         if aged:
-            print(f"  long-standing blockers (age as of {as_of}):")
+            print(f"  long-standing blockers, in days waiting (as of {as_of}):")
             for k, n, src in aged[:8]:
                 print(f"    - {k}  ({n} days, from the {src})")
+        if stale:
+            print(f"  observed unfinished in {args.days}+ consecutive snapshots:")
+            for k, n in stale:
+                print(f"    - {k}  ({n} observations)")
+            print("  a snapshot is any recorded day, so this counts how often the item was\n"
+                  "  sampled, not how long it has been open. Calendar gaps do not break a\n"
+                  "  run -- two observations a fortnight apart are consecutive. What breaks\n"
+                  "  it is a sample where the item is not in progress, or an edited title")
         if not stale and not aged:
-            print(f"  nothing stuck for {args.days}+")
+            print(f"  no blocker waiting {args.days}+ days, nothing left unfinished across "
+                  f"{args.days}+ snapshots")
 
 
 def cmd_variance(args, cfg):
@@ -1746,8 +1770,9 @@ def main() -> None:
                          "days - `board.py show --window` counts calendar days")
     sp = scoped(add("carryover", cmd_carryover, help="carried-over items and aged blockers"))
     sp.add_argument("--days", type=int, default=3,
-                    help="threshold: consecutive recorded days for carried-over items, "
-                         "calendar days for blocker age")
+                    help="threshold: calendar days for blocker age, consecutive recorded "
+                         "snapshots for carried-over items. The two are not the same unit "
+                         "-- a run of snapshots ignores the gaps between them")
     scoped(add("variance", cmd_variance, help="estimate vs actual"))
     sp = scoped(add("burndown", cmd_burndown, help="trend of AI-days remaining"))
     sp.add_argument("--days", type=int, default=14)

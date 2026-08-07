@@ -52,12 +52,23 @@ AI-days left  81.25 -> 80.85   ▇▇▆▆▅▅▄
 When the runway comes out absurd, **report it as printed and explain why.** It is usually
 one of three things: items are not being closed, scope grew, or the snapshot window is too short.
 
-### Carry-over and blockers
+### Blockers and carry-over
 
-Give the count as the script gives it: carry-over is counted in **consecutive recorded
-days**, blocker age in calendar days since first recorded. For anything past three, **one
-line on why it is not moving.** Split blockers by who has to clear them — you, someone
-else, or a pending decision.
+**Blockers first — their age is the sounder number.** A `[since]` date is a calendar fact
+that holds even on a machine with no recorded history, and it survives an item being
+renamed. Report it in days. For anything past three, **one line on why it is not moving**,
+and split them by who has to clear them: you, someone else, or a pending decision.
+
+Carry-over comes second and is counted in **observations, not days** — a run of six means
+the item was seen unfinished in six consecutive recorded snapshots, and nothing checks the
+dates between them, so six observations can span two months. Say "observations" or
+"snapshots", never "days".
+
+Say *unfinished* rather than *stuck* or *unchanged*: the run comes from the WIP state
+alone, so an item whose boxes closed every day is still counted. A run breaks when a
+snapshot finds the item not in progress, or when its title is edited — the key is
+`<phase>|<title>`, so renaming restarts the count at zero and a short run may mean a
+rename rather than fresh work.
 
 ### Estimate variance
 
@@ -74,17 +85,22 @@ correct, not a bug — do not describe those items as instant wins.
 
 ### Output
 
-The three boards side by side, with one line on what each metric means.
+One board — closed work — and code and tokens as plain context beneath it.
 
 ```
 closed   best 1.20 on 08-01   avg 0.64   4-day streak   0.4 behind goal
-code     best 38,330 lines on 08-04
-tokens   best 4.2M on 07-30
+code     1,204 lines
+tokens   1.9M tokens
 ```
 
-**Call out where the three disagree.** High code and token counts with zero closed work
-means the work happened but no item closed. That is one of two causes — items sized too
-large, or boxes not being checked. **Ask which.**
+**There is no best day for code or tokens, and do not invent one.** Both measure activity,
+not accomplishment: a refactor that deletes a bad implementation and a session that retried
+three times each move them, in the direction that looks like more. They are here to say
+what shape the week had, not to be won.
+
+**Call out where the three disagree.** Substantial code and token counts with zero closed
+work means the work happened but no item closed. That is one of two causes — items sized
+too large, or boxes not being checked. **Ask which.**
 
 ## 3. One line each on what carries into next week
 

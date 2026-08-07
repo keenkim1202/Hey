@@ -79,7 +79,7 @@ Put the output in three places. **Never count by hand.**
 
 | Output | Goes to |
 |---|---|
-| `checklist N/M boxes (P%)` | the top `Progress (boxes)` line |
+| `checklist N/M boxes` | the top `Progress (boxes)` line |
 | `effort closed / in progress / left` | the top `Progress (estimate)` line |
 | per-phase rows | the summary table's item, done and progress columns, plus the total row |
 
