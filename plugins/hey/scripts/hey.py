@@ -283,14 +283,33 @@ def projects_in_scope(cfg: dict, scope: str | None, name: str | None) -> list[di
     cur = resolve_project(cfg)
     if cur:
         return [cur]
-    if len(cfg["projects"]) == 1:
-        return list(cfg["projects"])
+    # Scope `current` means the project you are standing in, and nothing else. Answering
+    # from the sole registered project when the cwd matches none of them briefs the wrong
+    # ledger silently, and the same command starts failing the day a second project is
+    # registered. Out of scope is out of scope, at one project and at ten.
     return []
 
 
 def die(msg: str) -> None:
     print(f"hey: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+def die_out_of_scope() -> None:
+    """Every entry point fails the same way when the cwd is in no registered project.
+
+    Naming the resolved main root matters more than it looks: from inside a linked
+    worktree it is not the directory the user is standing in, and it is the path `add`
+    wants.
+    """
+    root = git_root(Path.cwd())
+    lines = [f"{root} is not a registered project" if root
+             else f"not inside a git repository: {Path.cwd()}"]
+    if root:
+        lines.append(f"register:  hey.py add {root} --init")
+    lines.append("list:      hey.py projects")
+    lines.append("sweep all: pass `--scope all`")
+    die("\n     ".join(lines))
 
 
 # ---------------------------------------------------------------- ledger
@@ -1150,7 +1169,7 @@ def cmd_resolve(args, cfg):
 def _each(args, cfg):
     projs = projects_in_scope(cfg, args.scope, args.project)
     if not projs:
-        die("no project in scope. Check `hey.py projects`, or pass `--scope all`")
+        die_out_of_scope()
     for p in projs:
         if not Path(p["ledger"]).exists():
             print(f"[{p['name']}] ledger missing: {p['ledger']}")

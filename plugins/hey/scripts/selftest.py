@@ -862,6 +862,21 @@ def main() -> int:
         check(label, passed, out if want is None or code else
               f"expected to find {want!r} in:\n{out}")
 
+    # `current` means the project you are standing in, and nothing else. It used to answer
+    # from the sole registered project whenever the cwd matched none of them, so a card for
+    # a ledger you were nowhere near came back looking like yours -- and the same command
+    # started failing the day a second project was registered. Only `fixture` is registered
+    # this early, which is the one arrangement where that fallback was reachable at all.
+    run([hey, "scope", "current"], env, proj)
+    code, out = run([board, "brief"], env, tmp)
+    check("scope current: the only registered project is not briefed from outside it",
+          code == 2 and "fixture" not in out, out)
+    # Failing is half of it. The path it names is the main repo root, which from inside a
+    # linked worktree is not where you are standing, and is what `add` wants.
+    check("scope current: being out of scope says how to get in",
+          "hey.py add" in out or "hey.py projects" in out, out)
+    run([hey, "scope", "all"], env, proj)
+
     # Blockers must be detected in whichever language the ledger uses, and only the real
     # ones -- three sit in the blocker section, while `Third item` says "depending", which
     # is not `pending` and must not count.

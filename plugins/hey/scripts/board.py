@@ -27,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
-    Ledger, ahead_of_base, card_width, day_range, die, fmt_date, load_config, merge_stats,
-    clip_to, need_history, project_base, projects_in_scope, read_stats,
-    record_progress, today_str, unpushed, worktree_roots, _sh,
+    Ledger, ahead_of_base, card_width, day_range, die, die_out_of_scope, fmt_date,
+    load_config, merge_stats, clip_to, need_history, project_base, projects_in_scope,
+    read_stats, record_progress, today_str, unpushed, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -203,7 +203,7 @@ def cmd_collect(args, cfg):
     on = args.date or today_str()
     projs = projects_in_scope(cfg, args.scope, args.project)
     if not projs:
-        die("no project in scope. Register one with `hey.py add <path>`")
+        die_out_of_scope()
     for p in projs:
         fields = {}
         root = Path(p["root"])
@@ -569,7 +569,7 @@ def cmd_card(args, cfg):
     on = args.date or today_str()
     projs = projects_in_scope(cfg, args.scope, args.project)
     if not projs:
-        die("no project in scope. Register one with `hey.py add <path>`")
+        die_out_of_scope()
     for p in projs:
         if not Path(p["ledger"]).exists():
             print(f"[{p['name']}] ledger missing: {p['ledger']}")
