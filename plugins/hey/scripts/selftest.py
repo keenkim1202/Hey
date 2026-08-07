@@ -852,8 +852,10 @@ def main() -> int:
         ([hey, "item", "nope"], "item: no match says so", "no item matches"),
         ([hey, "burndown"], "burndown"),
         ([board, "show"], "board: closed"),
-        ([board, "show", "--metric", "code"], "board: code"),
-        ([board, "show", "--metric", "tokens"], "board: tokens"),
+        # Code and tokens still appear, as plain context lines under the board rather
+        # than as boards of their own. There is no `--metric` to rank them with.
+        ([board, "show"], "board: code and tokens as context, not a contest",
+         S.METRIC_LABELS[args.lang]["code"]),
         ([board, "streak"], "streak"),
         ([board, "goal", "--set", "5.0", "--daily", "0.4"], "set goal: per project",
          "weekly 5.0 · daily 0.4"),

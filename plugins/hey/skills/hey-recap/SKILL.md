@@ -23,8 +23,6 @@ python3 "$HEY" burndown --days 14
 python3 "$HEY" carryover --days 3
 python3 "$HEY" variance
 python3 "$BOARD" show --window 14
-python3 "$BOARD" show --window 14 --metric code
-python3 "$BOARD" show --window 14 --metric tokens
 python3 "$BOARD" streak
 python3 "$BOARD" goal
 python3 "$HEY" log --limit 7

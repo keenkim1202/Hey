@@ -501,6 +501,17 @@ class Ledger:
     # -- aggregation
 
     def progress(self) -> dict:
+        """Totals. **Boxes are counted, effort is estimated, and neither is a percentage.**
+
+        A box count has no error term -- it is the one figure here that is not an estimate.
+        What it does not have is a meaningful denominator: the user writes it, and one box
+        may be a typo fix while the next is a subsystem. So `37/80` is worth printing and
+        `46%` is not, because the percentage reads as "the project is 46% done" and nothing
+        in the count supports that. `[AI n]` exists precisely because an even split lies.
+
+        Adding subitems makes the fraction fall without anything being undone, which is the
+        clearest sign it was never a completion rate: discovering scope is not regressing.
+        """
         scoped = [i for i in self.items if i["ai"]]
         cb_done = sum(self.boxes(i)[0] for i in self.items)
         cb_total = sum(self.boxes(i)[1] for i in self.items)
@@ -508,7 +519,6 @@ class Ledger:
         return {
             "cb_done": cb_done,
             "cb_total": cb_total,
-            "cb_pct": round(cb_done * 100 / cb_total, 1) if cb_total else 0.0,
             "total_ai": round(sum(i["ai"] for i in scoped), 2),
             "total_md": round(sum(i["md"] for i in scoped), 2),
             **{
@@ -531,7 +541,6 @@ class Ledger:
             out.append({
                 "phase": ph, "items": len(g), "done": done, "partial": part,
                 "cb_done": cd, "cb_total": ct,
-                "cb_pct": round(cd * 100 / ct, 1) if ct else 0.0,
                 "ai": round(sum(i["ai"] for i in g), 2),
             })
         return out
@@ -1125,7 +1134,7 @@ def cmd_progress(args, cfg):
     for p, led in _each(args, cfg):
         g = led.progress()
         print(f"[{p['name']}]")
-        print(f"  checklist  {g['cb_done']}/{g['cb_total']} boxes ({g['cb_pct']}%)")
+        print(f"  checklist  {g['cb_done']}/{g['cb_total']} boxes")
         pct = round(g["done_ai"] * 100 / g["total_ai"], 1) if g["total_ai"] else 0
         print(f"  effort     {g['done_ai']}/{g['total_ai']} AI-days closed ({pct}%) · "
               f"{g['wip_ai']} in progress · "
@@ -1135,7 +1144,7 @@ def cmd_progress(args, cfg):
             for ph in led.phases():
                 part = f" ({ph['partial']} partial)" if ph["partial"] else ""
                 print(f"    {ph['phase']:6} {ph['items']:3} items  {ph['done']:2} done{part:12}"
-                      f"  {ph['cb_done']}/{ph['cb_total']} boxes ({ph['cb_pct']}%)"
+                      f"  {ph['cb_done']}/{ph['cb_total']} boxes"
                       f"  AI {ph['ai']}")
 
 

@@ -316,33 +316,41 @@ def leaderboard(rows: list[dict], on: str, metric: str, top_n: int) -> list[str]
 
 
 def cmd_show(args, cfg):
+    """The closed-work board. **Closed work only -- code and tokens are not ranked.**
+
+    Lines of code and token counts measure activity, not accomplishment. A refactor that
+    deletes a bad implementation, a vendored update, a formatting pass, a session that
+    retried three times -- all of them move those numbers, none of them in the direction
+    the number implies. Ranking days by either rewards churn and verbosity, and there is
+    no action to take from "Tuesday was your highest line-count day".
+
+    Both are still collected and both still appear on the card, where they sit as context
+    for reading a day back later. That is the job they do well. This command is the one
+    place they were presented as a contest, and they are no longer in it.
+    """
     on = args.date or today_str()
     for p in projects_in_scope(cfg, args.scope, args.project):
         rows = [r for r in read_stats() if r["project"] == p["name"]]
         cutoff = (date.fromisoformat(on) - timedelta(days=args.window)).isoformat()
         rows = [r for r in rows if cutoff <= r["date"] <= on]
         print(f"[{p['name']}]")
-        for ln in leaderboard(rows, on, args.metric, args.top):
+        for ln in leaderboard(rows, on, "ai", args.top):
             print(f"  {ln}" if ln else "")
         # A recorded-but-zero day never gets a bar, so say so explicitly. Only when the day
         # was actually measured: a baseline carries no closed-work figure at all, and
         # calling that a zero credits the day with a result nobody recorded.
         today_row = next((r for r in rows if r["date"] == on), None)
-        _, get, _, has = METRICS[args.metric]
+        _, get, _, has = METRICS["ai"]
         if today_row and has(today_row) and not get(today_row):
             print()
-            print(f"  {flair('zero', on) if args.metric == 'ai' else 'Zero for today.'}")
-        if args.metric == "ai":
+            print(f"  {flair('zero', on)}")
+        context = [m for m in ("code", "tokens") if any(METRICS[m][3](r) for r in rows)]
+        if context:
             print()
-            for m in ("code", "tokens"):
-                label, get, fmt, _ = METRICS[m]
-                scored = [(r["date"], get(r)) for r in rows if get(r)]
-                if not scored:
-                    continue
-                best = max(scored, key=lambda x: x[1])
-                mine = next((v for d, v in scored if d == on), 0)
-                print(f"  {pad(label, 9)}{pad(fmt(mine), 14)}"
-                      f"{S.card('board_first', LANG)} {short_date(best[0])} {fmt(best[1])}")
+        for m in context:
+            label, get, fmt, has = METRICS[m]
+            mine = next((get(r) for r in rows if r["date"] == on and has(r)), 0)
+            print(f"  {pad(label, 9)}{fmt(mine)}")
 
 
 # ---------------------------------------------------------------- streak and goals
@@ -555,11 +563,6 @@ def rpad(s: str, width: int) -> str:
     return " " * max(0, width - _w(s)) + s
 
 
-def meter(done: float, total: float, width: int = 24) -> str:
-    if total <= 0:
-        return "░" * width
-    filled = min(width, int(round(done / total * width)))
-    return "█" * filled + "░" * (width - filled)
 
 
 def prev_workday(on: date) -> date:
@@ -682,10 +685,13 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
     remain = round(g["wip_ai"] + g["todo_ai"], 2)
     done_ai = f'{g["done_ai"]:.1f}'
     W, V = 12, 27  # label and value columns, sized so value+unit+denominator all fit
+    # No percentage and no meter on the checklist row. The count is exact and the
+    # denominator is whatever the user chose to write, so a filled bar reads as "you are
+    # this far along" on the strength of how finely the items happen to be split. Adding
+    # subitems would push the bar backwards without anything being undone.
     out += section("progress", S.card("progress_head", LANG)) + [
             f'{INDENT}{pad(S.card("checklist", LANG), W)}'
-            f'{pad(S.card("boxes_closed", LANG, done=g["cb_done"], total=g["cb_total"]), V)}'
-            f'({g["cb_pct"]}%)  {meter(g["cb_done"], g["cb_total"], WIDTH - 60)}',
+            f'{S.card("boxes_closed", LANG, done=g["cb_done"], total=g["cb_total"])}',
             f'{INDENT}{pad(S.card("effort", LANG), W)}'
             f'{pad(S.card("effort_val", LANG, done=done_ai, total=g["total_ai"]), V)}'
             f'{S.card("effort_note", LANG, left=remain, wip=g["wip_ai"])}']
@@ -713,10 +719,14 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             lbl, get, f, _ = METRICS[m]
             scored = [(r["date"], get(r)) for r in win if get(r)]
             mine = next((v for d_, v in scored if d_ == focus), 0)
-            best = max(scored, key=lambda x: x[1]) if scored else None
             shown = f(mine)
             line = f"{INDENT}{pad(lbl, 9)}{pad(shown, 20)}"
-            if best:
+            # A personal best is only offered for closed work. Lines of code and tokens are
+            # activity, not accomplishment -- churn and a verbose session both raise them --
+            # so ranking a day by either rewards the wrong move. They stay as context for
+            # reading the day back later, which is a job they do well.
+            if m == "ai" and scored:
+                best = max(scored, key=lambda x: x[1])
                 line += S.card("best_on", LANG, val=f(best[1]), date=short_date(best[0]))
             out.append(line)
         scored_ai = [r for r in win if r.get("earned_ai")]
@@ -790,7 +800,6 @@ def main() -> None:
                     help="how many calendar days back to include. Calendar days, not "
                          "records - `hey.py rank --window` counts records")
     sp.add_argument("--top", type=int, default=6)
-    sp.add_argument("--metric", choices=list(METRICS), default="ai")
 
     sp = add("streak", cmd_streak, help="consecutive days on goal")
     sp.add_argument("--threshold", type=float)

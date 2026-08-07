@@ -79,7 +79,6 @@ CARD = {
         # was measured, zeros included. Different populations, so it carries its own count.
         "board_avg": "avg of {n}",
         "board_all_zero": "all {n} recorded days are zero",
-        "board_first": "#1",
     },
     "ko": {
         "yesterday": "어제", "today_did": "오늘 한 일",
@@ -105,7 +104,6 @@ CARD = {
         "board_peak": "  최고", "board_is_today": "  <- 오늘",
         "board_avg": "{n}일 평균",
         "board_all_zero": "기록된 {n}일이 모두 0",
-        "board_first": "1등",
     },
 }
 
