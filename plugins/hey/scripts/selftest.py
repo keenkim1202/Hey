@@ -411,6 +411,39 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+SUGGEST_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+import tempfile
+from pathlib import Path
+import hey
+
+d = Path(tempfile.mkdtemp())
+p = d / 'TASKS.local.md'
+proj = {{'ledger': str(p), 'root': str(d), 'name': 't'}}
+
+# An item with no estimate is a hole in every total, so that one fires.
+p.write_text('## Work log\\n\\n### 2026-08-10 (Mon)\\n\\n- did a thing\\n\\n'
+             '## P0. Fine (1 MD / AI 1.0)\\n\\n'
+             '- [ ] **Unestimated** `[id b]` - no numbers here\\n', encoding='utf-8')
+led = hey.Ledger(proj)
+opn = [i for i in led.items if hey.Ledger.state(i) != hey.S.DONE]
+assert [i['title'] for i in opn if not i['ai']] == ['Unestimated'], opn
+
+# A plan with nothing wrong with it produces nothing. Silence is the default for the same
+# reason it is the session hook's: a line printed every run stops being read.
+p.write_text('## Work log\\n\\n### 2026-08-10 (Mon)\\n\\n- did a thing\\n\\n'
+             '## P0. Fine (1 MD / AI 1.0)\\n\\n'
+             '- [ ] **Estimated** `[id a]` - has one - 1 MD / AI 1.0\\n', encoding='utf-8')
+led = hey.Ledger(proj)
+opn = [i for i in led.items if hey.Ledger.state(i) != hey.S.DONE]
+assert [i for i in opn if not i['ai']] == []
+
+# The catalogue is read from this machine's own marketplaces, never written into the
+# script. A baked-in list of "tools you might like" is stale the week a name changes.
+for name, desc, tags in hey.available_plugins():
+    assert name and isinstance(tags, set), (name, tags)
+"""
+
 FENCE_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import tempfile
@@ -1000,6 +1033,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "suggest fires on a real gap and stays silent otherwise":
+            SUGGEST_PROBE.format(here=str(HERE)),
         "markdown quoted inside the ledger is not counted as work":
             FENCE_PROBE.format(here=str(HERE)),
         "an interrupted write leaves the previous file intact":

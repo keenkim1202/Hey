@@ -2118,6 +2118,123 @@ def cmd_import_tasks(args, cfg):
     print("\n".join(out))
 
 
+PLUGIN_ROW = re.compile(r"^\s*❯\s*([\w.-]+)@")
+MARKETPLACES = Path.home() / ".claude" / "plugins" / "marketplaces"
+# Four characters filters out the words every description shares -- `code`, `for`, `and`.
+WORD = re.compile(r"[a-z][a-z0-9-]{3,}")
+
+
+def installed_plugins() -> set:
+    """Plugin names the host CLI reports. Empty when there is no host CLI to ask.
+
+    Read rather than assumed. A model naming plugins from memory invents ones that do not
+    exist, and an invented recommendation is worse than none -- the reader goes looking for
+    it. Codex has no `claude` on PATH, so this is empty there and `suggest` simply says
+    less rather than guessing.
+    """
+    if not shutil.which("claude"):
+        return set()
+    out = _sh(["claude", "plugin", "list"], Path.cwd())
+    return {m[1] for ln in out.split("\n") if (m := PLUGIN_ROW.match(ln))}
+
+
+def available_plugins() -> list:
+    """`(name, description, tags)` for every plugin the user's own marketplaces offer.
+
+    The catalogue is read from the marketplaces already configured on this machine, not
+    written down here. A table of "tools you might like" baked into this file would be
+    wrong the week a name changes, would never know what this user actually has access to,
+    and is the same mistake as a hard-coded price or an unmeasured multiplier: a number
+    nobody checked, printed as though somebody had.
+    """
+    out = []
+    for man in sorted(MARKETPLACES.glob("*/.claude-plugin/marketplace.json")):
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for p in data.get("plugins", []):
+            name = p.get("name")
+            if not name:
+                continue
+            # Name, keywords and category only. Descriptions are prose, and matching a
+            # plan against prose matches everything -- the recommendation then arrives for
+            # every item and stops being read at all.
+            tags = {name, *(p.get("keywords") or []), p.get("category") or ""}
+            out.append((name, p.get("description", ""),
+                        {t.lower() for t in tags if t}))
+    return out
+
+
+def cmd_suggest(args, cfg):
+    """Capabilities the plan calls for that are not being used. Suggests; never installs.
+
+    **Silence is the default**, the same rule the session hook follows. A recommendation
+    that fires every day is an advertisement, and one the reader cannot check is noise, so
+    every line here names the ledger item that produced it and nothing is printed without
+    one. Measured before shipping, over the three ledgers on hand: one suggestion from a
+    114-item plan, and silence from the other two.
+
+    **The catalogue half is English-only in practice**, and not by choice -- plugin tags
+    are written in English, so a Korean ledger has almost nothing to match against and
+    this stays quiet for it. Reading meaning across that gap is the model's job, not a
+    regex's; the skill covers it, and holds the model to naming only what this command
+    confirms exists.
+
+    Nothing is installed, enabled or configured. This prints a command at most, and the
+    person decides.
+    """
+    have = installed_plugins()
+    for p, led in _each(args, cfg):
+        tips = []
+        open_items = [i for i in led.items if Ledger.state(i) != S.DONE]
+
+        # Estimates are the column every total is counted from, so an item without one is
+        # a hole in the arithmetic rather than a missing nicety.
+        noest = [i for i in open_items if not i["ai"]]
+        if noest:
+            tips.append((f"{len(noest)} open item(s) carry no estimate, so they count as "
+                         f"zero in every total", "`/hey-plan` step 3 estimates them",
+                         noest[0]["title"]))
+
+        # A ledger being written but not recorded loses closed work permanently: box state
+        # has no history, so a day never recorded cannot be reconstructed later.
+        logged = led.section_body("log")
+        recent = [ln for ln in logged if Ledger.DAY.match(ln)][:1]
+        if open_items and not recent:
+            tips.append(("the work log has no dated entry, and closed work cannot be "
+                         "backfilled", "`/seeya` writes the day and records it",
+                         open_items[0]["title"]))
+
+        # The external half. A plugin is named only when the plan's own words match its
+        # tags and it is **not already installed** -- something already in place needs no
+        # suggestion, and saying "you have this" every run is the advertisement this whole
+        # command is written to avoid.
+        words = {w for i in open_items for w in WORD.findall(i["text"].lower())}
+        for name, desc, tags in available_plugins():
+            if name in have:
+                continue
+            hit = sorted(tags & words)
+            # Two independent tags, so a single common word cannot pull in a plugin. One
+            # match over a 284-entry catalogue fires constantly and means nothing.
+            if len(hit) < 2:
+                continue
+            owner = next((i["title"] for i in open_items
+                          if all(h in i["text"].lower() for h in hit[:2])), None)
+            if owner:
+                tips.append((f"the plan says `{hit[0]}` and `{hit[1]}`, and `{name}` is "
+                             f"not installed — {desc[:90]}",
+                             f"`claude plugin install {name}` if you want it", owner))
+
+        for why, what, item in tips:
+            print(f"💡 [{p['name']}] {why}")
+            print(f"   {what}")
+            print(f"   from: {item}")
+        if tips:
+            print("   Suggestions only. Nothing here installs, enables or configures "
+                  "anything.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="hey.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2193,6 +2310,8 @@ def main() -> None:
     sp = scoped(add("context", cmd_context, help="worktrees, branches and files touched on a date"))
     sp.add_argument("--date")
     sp.add_argument("--files", type=int, default=6)
+    scoped(add("suggest", cmd_suggest,
+               help="capabilities the plan calls for and is not using. Suggests only"))
     sp = add("import-tasks", cmd_import_tasks,
              help="a spec-kit tasks.md as ledger items. Prints, never writes")
     sp.add_argument("path", help="path to tasks.md")
