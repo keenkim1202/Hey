@@ -41,6 +41,12 @@ branch was it.
 And how much of the sprint is left, anyway. So I start on whatever is loudest, and
 tomorrow I go looking for yesterday's half-finished work all over again.
 
+The agent in the next window has the same problem and less to go on. Its context is gone
+with the session, so it re-reads the code and re-derives what was already decided — and
+where it cannot, it guesses confidently. A commit says what changed. It does not say how
+far the work got, what was tried and abandoned, or what is still failing, which are the
+three things the next morning actually turns on.
+
 **After.** One command, one card.
 
 ```
@@ -84,6 +90,11 @@ The numbers come from scripts, not from the model reading and adding things up. 
 judgement underneath them — what to pick up, what to skip, what is actually blocked — is
 the part a script cannot do. The card itself is printed as-is; the skills are not allowed
 to summarise it away.
+
+The same file is the handoff. A session ends, its context goes with it, and the ledger is
+what the next one reads instead of re-deriving: which item this branch belongs to, what
+was tried, what is still waiting on someone else. Written for you, and legible to the
+agent for the same reason it is legible to you — it is a markdown file, not a database.
 
 ---
 
