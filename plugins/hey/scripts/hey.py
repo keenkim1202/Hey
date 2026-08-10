@@ -363,6 +363,13 @@ class Ledger:
     # Every marker, for stripping them back out of anything a person reads.
     MARKERS = re.compile(r"`?\[(?:AI \d+\.?\d*|since (?:\d{4}-\d{2}-\d{2}|unknown)"
                          r"|branch [^\]\s]+|blocked|id [^\]\s]+)\]`?")
+    # A line still holding the template's `<...>` stand-in is scaffolding, not work. A
+    # freshly created ledger otherwise reports its own example rows as an item, a subitem
+    # and a blocker, so the first card anyone sees is three counts of nothing, and the
+    # snapshot taken that day records example names that no later ledger answers to.
+    # The whole title has to be the stand-in: an item that merely mentions `<T>` somewhere
+    # in its sentence is a real item and is left alone.
+    PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 
     def __init__(self, project: dict):
         self.project = project
@@ -378,6 +385,9 @@ class Ledger:
         self.log_path = log_path if log_path and log_path.exists() else None
         self.log_lines = self.log_path.read_text().split("\n") if self.log_path else []
         self.items: list[dict] = []
+        # Counted rather than silently dropped, so `doctor` can say why a ledger that
+        # visibly has rows in it reports no items.
+        self.placeholders = 0
         self._parse()
 
     def _parse(self) -> None:
@@ -387,11 +397,17 @@ class Ledger:
                 section, cur = ln[3:].strip(), None
                 continue
             if m := self.ITEM.match(ln):
+                title = self._title(m[2])
+                if self.PLACEHOLDER.match(title):
+                    # Its subitems belong to it, so clearing `cur` drops them with it.
+                    cur = None
+                    self.placeholders += 1
+                    continue
                 est = self.EST.search(m[2])
                 cur = {
                     "section": section or "?",
                     "phase": (section or "?").split(".")[0].split(" ")[0],
-                    "title": self._title(m[2]),
+                    "title": title,
                     "text": m[2],
                     "done": m[1].lower() == "x",
                     "kids": [],
@@ -402,7 +418,14 @@ class Ledger:
                     "ai": float(est[2]) if est else 0.0,
                 }
                 self.items.append(cur)
-            elif (k := self.KID.match(ln)) and cur is not None:
+            elif k := self.KID.match(ln):
+                # Tested before the `cur` guard, so a stand-in under a stand-in parent is
+                # still counted rather than disappearing along with it.
+                if self.PLACEHOLDER.match(self._title(k[2])):
+                    self.placeholders += 1
+                    continue
+                if cur is None:
+                    continue
                 cur["kids"].append(k[1].lower() == "x")
                 w = self.KID_AI.search(k[2])
                 cur["kid_ai"].append(float(w[1]) if w else None)
@@ -1034,7 +1057,15 @@ def cmd_doctor(args, cfg):
                 names = " / ".join(S.section_aliases(key))
                 say("warn", f"no `{names}` heading - whatever reads it returns nothing")
         if not ledger.items:
-            say("warn", "no checklist items found. Is the estimate format `N MD / AI M`?")
+            # The ledger having rows in it and reporting none of them is the confusing
+            # case, and on a fresh `--init` it is the only case. Say which it is.
+            if ledger.placeholders:
+                say("warn", f"{ledger.placeholders} template stand-in(s) and no real item "
+                            f"yet. Rows still reading `<like this>` are not counted - "
+                            f"replace them, or run `/hey-plan`")
+            else:
+                say("warn", "no checklist items found. Is the estimate format "
+                            "`N MD / AI M`?")
         else:
             g = ledger.progress()
             ok(f"{len(ledger.items)} item(s), {g['cb_total']} box(es), AI {g['total_ai']}")

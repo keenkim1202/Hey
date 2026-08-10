@@ -522,10 +522,18 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
         # survived here after the board, the streak and the rank were taken out, which made
         # this file claim in its own docstring that days are no longer scored against each
         # other while still printing the highest one.
+        row = next((r for r in win if r["date"] == focus), None)
         for m in ("ai", "code", "tokens"):
-            lbl, get, f, _ = METRICS[m]
-            mine = next((get(r) for r in win if r["date"] == focus), 0)
-            out.append(f"{INDENT}{pad(lbl, 9)}{f(mine)}")
+            lbl, get, f, has = METRICS[m]
+            # The baseline row carries no closed figure at all, and the fourth element of
+            # METRICS is how that is told apart from a day that closed nothing. Reading the
+            # value alone printed the first day ever recorded as a flat `0.00 AI-days` --
+            # the one number on this card nobody can act on, and the one everybody reads as
+            # a bad first day. `collect` has always said `baseline` here; the card had not.
+            if row is not None and not has(row):
+                out.append(f"{INDENT}{pad(lbl, 9)}{S.card('baseline', LANG)}")
+                continue
+            out.append(f"{INDENT}{pad(lbl, 9)}{f(get(row) if row else 0)}")
         # The zero line moved here when the board it used to live on was removed. It is the
         # one piece of commentary that does work, and only in the case `contradicts_zero`
         # picks out.

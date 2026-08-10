@@ -935,6 +935,14 @@ def main() -> int:
     # The way out is not the same for every command, and offering the wrong one costs the
     # reader a minute of believing they mistyped a flag. `note` is the sharp case: it takes
     # `--scope` and then ignores it, so advising `--scope all` there fails without a word.
+    # `collect` has always called the first record a baseline. The card read the same row
+    # and printed `0.00 AI-days`, so the two disagreed about the same day -- and the card
+    # is the half a person actually reads, on the one day they have nothing to compare it
+    # against. Asserted in whichever language is running, since the word is translated.
+    code, out = run([board, "wrap", "--date", yesterday], env, proj)
+    check("card: the first record reads as a baseline, not as a day that closed nothing",
+          S.card("baseline", args.lang).split(" ")[0] in out and "0.00" not in out, out)
+
     code, out = run([hey, "note", "from nowhere"], env, tmp)
     check("out of scope: a note is sent to `--project`, since it lands in one ledger",
           code == 2 and "--project" in out and "--scope all" not in out, out)
@@ -1038,6 +1046,14 @@ def main() -> int:
     block = out.split("project second\n", 1)[-1].split("\nproject ", 1)[0].split("\nhistory", 1)[0]
     check("add --init: the template satisfies every section doctor looks for",
           "project second\n" in out and "heading" not in block, block)
+    # The template ships one example item, one example subitem and one example blocker.
+    # Counted, they made the first card a new user ever sees read `0/3 boxes`, `AI 0.4`
+    # and `Blocked 1` -- every figure on it invented by the file they had not written yet.
+    check("add --init: the template's own example rows are not counted as work",
+          "stand-in" in block, block)
+    code, out = run([hey, "progress", "--project", "second"], env, proj)
+    check("add --init: a fresh ledger has no items, not three",
+          "0/0 boxes" in out or "no checklist" in out, out)
     code, out = run([hey, "remove", "second"], env, proj)
     check("remove: unregisters and keeps the ledger",
           code == 0 and "unregistered: second" in out, out)
