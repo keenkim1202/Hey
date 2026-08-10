@@ -100,7 +100,10 @@ Any one of these ends the loop on the spot and hands back to the user. **Never p
 on a guess.**
 
 - The same verification failure twice in a row
-- A decision is needed that the spec does not cover — mark the item `needs decision` and move on
+- A decision is needed that the spec does not cover — put `[blocked]` on the item and move
+  on. **The marker, not the words.** Writing "needs decision" in the text changes nothing:
+  the scripts classify on `[blocked]` or a blocker heading, so an item described as
+  undecided stays a `/hey-run` candidate and gets picked up again next loop
 - A file outside the scope would have to change
 - A server or external dependency does not exist yet
 - The approved scope is exhausted
@@ -123,9 +126,9 @@ Done
 Not done
 - OrchardClient package — the 3 openapi declarations landed. AuthMiddleware stopped:
   the server header contract (allowed X-Tenant values) is undecided. Item marked
-  `needs decision`
+  `[blocked]`
 
-Progress   35/154 (22.7%) -> 39/154 (25.3%)
+Progress   35/154 -> 39/154 boxes
 Estimate   AI 81.25 left -> 80.85
 
 No commits or PRs were created. The changes are in the working tree
@@ -133,7 +136,9 @@ No commits or PRs were created. The changes are in the working tree
 
 - **Always split done from not done.** For not done, how far it got and what remains
 - Name the verification you ran. If you did not run it, write "not verified"
-- Take progress deltas from the script output
+- Take progress deltas from the script output. **Boxes, never a percentage** — `progress`
+  prints counts, and a box is not a unit: one carries an hour and the next carries a week,
+  so a percentage of them is a number the ledger does not contain
 - **Never create a commit, push or PR.** Only when the user asks
 
 ## Wording

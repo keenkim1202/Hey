@@ -80,7 +80,7 @@ def card_width() -> tuple[int, str]:
 
 def load_config() -> dict:
     if CONFIG.exists():
-        return json.loads(CONFIG.read_text())
+        return json.loads(CONFIG.read_text(encoding="utf-8"))
     return {"projects": [], "scope": "current"}
 
 
@@ -425,7 +425,7 @@ class Ledger:
     def __init__(self, project: dict):
         self.project = project
         self.path = Path(project["ledger"])
-        self.text = self.path.read_text() if self.path.exists() else ""
+        self.text = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
         self.lines = self.text.split("\n")
         # An append-only half -- work log, notes, PR log -- grows forever while the
         # checklist is the part edited daily, so a long-running project ends up wanting
@@ -434,7 +434,8 @@ class Ledger:
         log = project.get("ledger_log")
         log_path = Path(log) if log else None
         self.log_path = log_path if log_path and log_path.exists() else None
-        self.log_lines = self.log_path.read_text().split("\n") if self.log_path else []
+        self.log_lines = (self.log_path.read_text(encoding="utf-8").split("\n")
+                          if self.log_path else [])
         self.items: list[dict] = []
         # Counted rather than silently dropped, so `doctor` can say why a ledger that
         # visibly has rows in it reports no items.
@@ -636,8 +637,15 @@ class Ledger:
         for it in self.items:
             if self.state(it) == S.DONE:
                 continue
-            sect = it["section"].lower()
-            in_section = any(w.lower() in sect for w in S.blocker_sections())
+            # The heading has to *start* with the word, not merely contain it. A substring
+            # test read `## No blockers remain` as a blocker section and filed every item
+            # under it as blocked -- a heading declaring there are none marking all of them.
+            # Once blocked, an item drops out of `/hey-run` candidates and starts accruing
+            # a wait it was never on, which is the expensive misclassification `[blocked]`
+            # was introduced to stop.
+            sect = it["section"].lower().lstrip("# ").strip()
+            in_section = any(re.match(rf"{re.escape(w.lower())}s?(?![\w-])", sect)
+                             for w in S.blocker_sections())
             marked = bool(self.BLOCKED.search(it["text"]))
             if in_section or marked:
                 m = self.SINCE.search(it["text"])
@@ -801,7 +809,7 @@ def read_stats() -> list[dict]:
     if not STATS.exists():
         return []
     out = []
-    for n, ln in enumerate(STATS.read_text().splitlines(), 1):
+    for n, ln in enumerate(STATS.read_text(encoding="utf-8").splitlines(), 1):
         if not ln.strip():
             continue
         try:
@@ -1250,7 +1258,7 @@ def cmd_doctor(args, cfg):
     if not STATS.exists():
         say("warn", f"{STATS} does not exist yet. Run `board.py collect`")
     else:
-        raw = [ln for ln in STATS.read_text().splitlines() if ln.strip()]
+        raw = [ln for ln in STATS.read_text(encoding="utf-8").splitlines() if ln.strip()]
         rows = read_stats()
         if len(rows) != len(raw):
             say("FAIL", f"{len(raw) - len(rows)} damaged line(s) in {STATS}")
@@ -1580,7 +1588,7 @@ def cmd_note(args, cfg):
     stamp = datetime.now().strftime("%H:%M")
     bullet = f"- {stamp} {args.text}" + (f" — {' · '.join(bits)}" if bits else "")
 
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     today = today_str()
     header = f"### {fmt_date(today)}"
     heads = tuple(f"## {n}" for n in S.section_aliases("notes"))
@@ -2066,7 +2074,7 @@ def cmd_import_tasks(args, cfg):
     if not src.exists():
         die(f"not found: {src}")
     phase, out, n = None, [], 0
-    for ln in src.read_text().split("\n"):
+    for ln in src.read_text(encoding="utf-8").split("\n"):
         if m := SPEC_PHASE.match(ln):
             num, final, title = m[1], m[2], m[3]
             phase = f"P{num}" if num else "PZ"

@@ -87,13 +87,16 @@ one silently.** Ask, and if the ledger is missing, ask before copying
 `templates/LEDGER.md` is the reference. Five sections are found by name, and **each name
 is matched against every language alias**, so Korean and English ledgers both work:
 
-python3 "$HEY" add <root> --ledger <path>  # when the ledger lives elsewhere
-python3 "$HEY" add <root> --ledger-log <path>  # prose sections in a second file
+| Heading | Who reads or writes it |
 |---|---|
 | `## Notes` / `## 메모` | `/hey` inserts under today's date |
 | `## Work log` / `## 작업 로그` | `/seeya` inserts under today's date |
 | `### Next up` / `### 다음 착수 순서` | `/hey-sync` reorders; `/wassup` and `/seeya` read |
 | `## Summary` / `## 진행 요약` | `/hey-sync` fills the totals |
+| `## Blockers` / `## 블로커` | every unfinished item under it counts as blocked |
+
+`doctor` checks the first four by name. The fifth is matched differently — anything under
+a heading naming blockers is treated as one, wherever that heading sits.
 
 Checklist item convention:
 
@@ -249,4 +252,4 @@ section alone, and reaching it meant loading everything else on this page.
 - Never commit the ledger. It is local; `.git/info/exclude` is the default home for it
 - Never create a second copy of the ledger inside a worktree. One registered path only
 - Never write a number by eye. Copy the script output
-- Never send user data anywhere. Ranking compares **only against the user's own past**
+- Never send user data anywhere. Nothing here reaches the network but `gh`, on request

@@ -92,7 +92,7 @@ def token_usage(project: dict | None, on: str) -> dict:
         if stale:
             continue
         try:
-            fh = f.open(errors="replace")
+            fh = f.open(encoding="utf-8", errors="replace")
         except OSError:
             continue
         # Single transcripts reach tens of MB. Stream instead of reading the whole file.

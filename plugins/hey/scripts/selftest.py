@@ -732,6 +732,53 @@ DENIALS = ("no ", "not ", "never", "none of", "nothing", "gone", "used to",
            "없", "않", "예전에는")
 
 
+ENCODINGLESS = re.compile(r"\.(?:read_text|write_text)\((?![^()]*encoding=)")
+
+
+def encoding_checks() -> list:
+    """Every file the shipped scripts read or write must name its encoding.
+
+    Left to the platform default, a Korean ledger written as UTF-8 raises
+    `UnicodeDecodeError` on a Windows console still defaulting to a legacy code page --
+    and the ledger, the config and the history are all files this tool wrote itself, so
+    the failure lands on data the user cannot see anything wrong with. CI runs Linux and
+    macOS, where the default is already UTF-8, so nothing here would ever catch it.
+
+    The self-test itself is exempt: it reads only what it just wrote, on the machine that
+    wrote it, and pinning it would add noise without covering a user.
+    """
+    plugin = HERE.parent
+    out = []
+    for f in sorted(plugin.rglob("*.py")):
+        if f.name == "selftest.py":
+            continue
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if ENCODINGLESS.search(line):
+                out.append((f"{f.relative_to(plugin)}:{n} reads or writes without "
+                            f"`encoding=`, so the platform default decides", line.strip()))
+    return out
+
+
+def scoped_hits(text: str) -> list:
+    """Removed-feature terms `text` asserts, ignoring the sentences that deny them.
+
+    Wrapped lines are joined before splitting, because the two failure modes pull in
+    opposite directions. A whole line is too coarse: `Never send user data anywhere.
+    Ranking compares only against the user's own past` denies one thing and asserts
+    another, and the `Never` covered both. A single line is too fine: prose here is
+    hard-wrapped, so `... a` / `personal best. All of it is gone.` separates a denial from
+    its own term and the paragraph written to say a feature was removed gets reported as
+    claiming it.
+    """
+    hits = []
+    for frag in re.split(r"(?<=[.;])\s+", " ".join(text.split())):
+        low = frag.lower()
+        if any(d in low for d in DENIALS):
+            continue
+        hits += [t for t in REMOVED_FEATURES if t in low]
+    return hits
+
+
 def removed_feature_checks() -> list:
     """Prose must not describe a feature the scripts no longer have.
 
@@ -755,23 +802,37 @@ def removed_feature_checks() -> list:
     for path in files:
         if not path.exists():
             continue
-        fenced = False
-        for n, line in enumerate(path.read_text().splitlines(), 1):
+        # Paragraphs first, then sentences. Neither unit alone works: a whole line is too
+        # coarse, because `Never send user data anywhere. Ranking compares only against the
+        # user's own past` denies the network and then, in the same breath, describes a
+        # feature that had been deleted -- and the line-wide `Never` covered both halves,
+        # which is how a Codex review found that sentence and this check did not. A single
+        # line is also too fine, because prose here is hard-wrapped: `Days used to be
+        # scored ... a` / `personal best. All of it is gone.` puts the denial and the term
+        # on different lines, and sentence-splitting per line reports the paragraph that
+        # exists to say the feature was removed.
+        fenced, para = False, []
+
+        def flush(para=para):
+            start = para[0][0] if para else 0
+            joined = " ".join(t for _, t in para)
+            para.clear()
+            for term in scoped_hits(joined):
+                # Every skill's file is named SKILL.md, so the basename alone does not say
+                # which one failed.
+                yield (f"{path.relative_to(root)}:{start} names `{term}`, which no script "
+                       f"prints", joined[:160])
+
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.lstrip().startswith("```"):
+                out.extend(flush())
                 fenced = not fenced
                 continue
-            if fenced:
+            if fenced or not line.strip():
+                out.extend(flush())
                 continue
-            low = line.lower()
-            if any(d in low for d in DENIALS):
-                continue
-            for term in REMOVED_FEATURES:
-                if term in low:
-                    # Every skill's file is named SKILL.md, so the basename alone does not
-                    # say which one failed.
-                    where = path.relative_to(root)
-                    out.append((f"{where}:{n} names `{term}`, which no script prints",
-                                line.strip()))
+            para.append((n, line.strip()))
+        out.extend(flush())
     return out
 
 
@@ -1000,7 +1061,8 @@ def main() -> int:
     # broken manifest silenced the all-clear for everything else checked statically.
     for group, probe in (("manifests and component names", static_checks),
                          ("language packs agree", string_pack_checks),
-                         ("docs claim no removed feature", removed_feature_checks)):
+                         ("docs claim no removed feature", removed_feature_checks),
+                         ("every read and write names its encoding", encoding_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)
@@ -1107,6 +1169,20 @@ def main() -> int:
     code, out = run([hey, "doctor"], env, proj)
     check("doctor: names the lines that read as waiting but carry no marker",
           "read as waiting but carry no" in out and "Reads as blocked" in out, out)
+
+    # The removed-feature check has two failure modes and they pull in opposite directions,
+    # so both are pinned. Too coarse: a denial anywhere on the line covers an assertion
+    # elsewhere on it, which is how `Never send user data anywhere. Ranking compares ...`
+    # survived. Too fine: prose is hard-wrapped, so a denial and its term land on different
+    # lines and the paragraph written to say a feature is gone gets reported as claiming it.
+    check("static check: a denial cannot cover an assertion later in the same line",
+          scoped_hits("- Never send user data anywhere. Ranking compares only against "
+                      "the user's own past") == ["ranking"],
+          "the line-wide denial is back")
+    check("static check: a wrapped paragraph's denial still reaches its own term",
+          scoped_hits("Days used to be scored against each other here -- a board, a\n"
+                      "streak, a weekly pace, a personal best. All of it is gone.") == [],
+          "hard-wrapped prose is being reported as claiming what it denies")
 
     # `[id ...]` used to come up only once a rename had already cost something -- a key two
     # items claim, or a recorded key nothing answers to. Both arrive after the history it

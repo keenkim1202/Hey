@@ -500,8 +500,9 @@ with a transparent background:
 
 ### 🔒 Does anything leave my machine?
 
-No. There is no server and no telemetry. Ranking compares today against your own past
-records in `~/.hey/stats.jsonl`.
+No. There is no server and no telemetry. Everything read stays on the machine, and the
+only thing that reaches the network is `gh`, when a command you ran asks it for your own
+pull requests.
 
 ### 📁 Do I have to commit the ledger?
 
