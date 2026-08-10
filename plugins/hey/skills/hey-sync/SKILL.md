@@ -56,6 +56,17 @@ With squash merges the branch commits never appear on the default branch. Do not
 
 ## 3. Check boxes
 
+`pr-sync` ends with the items a merged PR names that are **still unchecked**. That list is
+the only place anything here will propose a tick, and it proposes rather than acts:
+
+1. Verify each in the code — file listing, symbol presence, the diff itself
+2. Bring them to the user together: what landed, what you confirmed, what you could not
+3. Ask. **Then** tick what they confirm
+
+Ticking one because `pr-sync` named it is the failure this step exists to prevent. A
+merged PR means code landed, not that the item is finished — and the item is what the
+estimate, the carry-over and the burndown are all counted against.
+
 - **Only mark `[x]` what is completely finished**
 - **For partial work, leave the parent alone and add subitems.** Keep the PR number
 

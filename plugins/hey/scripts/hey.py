@@ -1730,6 +1730,7 @@ def cmd_pr_sync(args, cfg):
             continue
         keys = {led.key(i): i for i in led.items}
         found = 0
+        unchecked: dict = {}
         for pr in json.loads(raw):
             marks = re.findall(r"(?:closes|닫음)\s+([^\s,]+)", pr.get("body") or "",
                                flags=re.IGNORECASE)
@@ -1743,6 +1744,8 @@ def cmd_pr_sync(args, cfg):
                     state = Ledger.state(keys[hit])
                     flag = "already closed" if state == S.DONE else "still unchecked"
                     print(f"    {m} -> {hit}  [{flag}]")
+                    if state != S.DONE:
+                        unchecked.setdefault(hit, []).append(pr["number"])
                 elif ambiguous:
                     print(f"    {m} -> matches {len(ambiguous)} items, so it names none "
                           f"of them:")
@@ -1756,6 +1759,18 @@ def cmd_pr_sync(args, cfg):
         if not found:
             print(f"[{p['name']}] no `closes <item key>` markers in the last "
                   f"{args.limit} merged PRs")
+        elif unchecked:
+            # Gathered into one line, because the per-PR rows above are what a reader
+            # skims. A merged pull request naming an item that is still open is the one
+            # shape in this output that asks for a decision, and it is the shape most
+            # worth surfacing: the work landed and the ledger has not heard about it.
+            # Surfaced, not acted on -- the tick stays a person's to make.
+            print(f"[{p['name']}] {len(unchecked)} item(s) named by a merged PR and still "
+                  f"unchecked:")
+            for k, prs in sorted(unchecked.items()):
+                print(f"    {k}  ({', '.join('#' + str(n) for n in prs)})")
+            print("  Verify each in the code, then ask before ticking. A marker is not "
+                  "verification -- a PR titled `module scaffold` may be two lines")
 
 
 def cmd_item(args, cfg):

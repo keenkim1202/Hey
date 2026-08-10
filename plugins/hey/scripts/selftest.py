@@ -1268,6 +1268,15 @@ def main() -> int:
           code == 0 and "P0|First -> P0|First item" in out, out)
     check("pr-sync: says whether the item it resolved to is still open",
           "still unchecked" in out, out)
+    # The per-PR rows are what a reader skims. A merged PR naming an item that is still
+    # open is the one shape here that asks for a decision -- work landed, ledger has not
+    # heard -- so it is gathered at the end instead of being left in the scroll.
+    check("pr-sync: gathers the still-unchecked items into one closing list",
+          "item(s) named by a merged PR and still unchecked" in out
+          and "(#42)" in out, out)
+    # And it stops there. Proposing is the contract; the tick is the user's.
+    check("pr-sync: proposes the tick rather than taking it",
+          "ask before ticking" in out, out)
     # The bug: `P0` fits every item in the phase, and the report used to name one of them,
     # picked by whichever order the dict happened to be in.
     check("pr-sync: an ambiguous marker names none of them, and lists what it fits",
