@@ -29,7 +29,7 @@ import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, ahead_of_base, card_width, day_range, die, die_out_of_scope, fmt_date,
     load_config, merge_stats, clip_to, need_history, project_base, projects_in_scope,
-    read_stats, record_progress, today_str, unpushed, worktree_roots, _sh,
+    read_stats, record_progress, records_after, today_str, unpushed, worktree_roots, _sh,
 )
 
 TRANSCRIPTS = Path(os.environ.get("HEY_TRANSCRIPTS", Path.home() / ".claude" / "projects"))
@@ -228,13 +228,10 @@ def cmd_collect(args, cfg):
     for p in projs:
         fields = {}
         root = Path(p["root"])
-        # Box state is only ever the ledger's *current* state -- there is no history in the
-        # file. Stamping it under an earlier date than a record that already exists moves
-        # which day counts as the baseline, and the newer day then diffs against an
-        # identical snapshot and reads 0 forever. Code and tokens do backfill, because git
-        # and the transcripts keep their own history, so those are still collected.
-        later = [r for r in read_stats()
-                 if r["project"] == p["name"] and r.get("items") and r["date"] > on]
+        # Why box state cannot be backdated is in `records_after`. Code and tokens do
+        # backfill, because git and the transcripts keep their own history, so unlike
+        # `snapshot` this command still collects those two for the earlier day.
+        later = records_after(p["name"], on)
         if Path(p["ledger"]).exists() and not later:
             fields.update(record_progress(Ledger(p), on))
         elif later:

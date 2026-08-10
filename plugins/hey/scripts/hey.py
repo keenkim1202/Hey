@@ -84,9 +84,34 @@ def load_config() -> dict:
     return {"projects": [], "scope": "current"}
 
 
+def write_atomic(path: Path, text: str) -> None:
+    """Write to a temporary file beside the target, then rename over it.
+
+    A rename within one filesystem is atomic: a reader sees the old file or the new one,
+    never a half-written one. `stats.jsonl` was already written this way because losing it
+    loses every recorded day -- but the reasoning applies harder to the two files that had
+    plain writes. The ledger is deliberately never committed, so an interrupted write to it
+    leaves no copy anywhere to restore from, and `config.json` holds the registry of every
+    project. Both were one `Ctrl-C` from being truncated.
+
+    The temporary name carries the pid. A fixed one is shared by every process writing the
+    same target, so two of them race: both write, the first renames, and the second renames
+    a path that is no longer there.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        # Only reached with the temporary still in place when the write or the rename
+        # raised. Leaving it behind would litter the ledger's own directory.
+        if tmp.exists():
+            tmp.unlink()
+
+
 def save_config(cfg: dict) -> None:
-    HOME.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+    write_atomic(CONFIG, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
 
 
 def git_root(cwd: Path) -> Path | None:
@@ -790,12 +815,11 @@ def write_stats(rows: list[dict]) -> None:
     """Rewrite stats.jsonl atomically.
 
     The whole file is rewritten on every record, so a half-finished write would take
-    the entire history with it.
+    the entire history with it. The fixed `.tmp` name this used to carry was shared by
+    every process, so two projects collected at once raced over it -- `write_atomic`
+    puts the pid in the name.
     """
-    HOME.mkdir(parents=True, exist_ok=True)
-    tmp = STATS.with_name(STATS.name + ".tmp")
-    tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
-    tmp.replace(STATS)
+    write_atomic(STATS, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
 
 
 def merge_stats(on: str, project: str, fields: dict) -> None:
@@ -818,6 +842,22 @@ def merge_stats(on: str, project: str, fields: dict) -> None:
             hit[k] = v
     rows.sort(key=lambda r: (r["date"], r["project"]))
     write_stats(rows)
+
+
+def records_after(project: str, on: str) -> list:
+    """Recorded days for this project later than `on` that carry box state.
+
+    Box state is only ever the ledger's **current** state -- the file keeps no history of
+    it. Stamping today's boxes under a date earlier than a record that already exists moves
+    which day counts as the baseline, and the newer day then diffs against an identical
+    snapshot and reads zero closed work from then on.
+
+    `collect` has always checked this. `snapshot --date` did not, so the same corruption
+    was one flag away through the other door. Defined once so a third caller cannot open
+    a third.
+    """
+    return [r for r in read_stats()
+            if r["project"] == project and r.get("items") and r["date"] > on]
 
 
 def record_progress(led: Ledger, on: str) -> dict:
@@ -913,7 +953,7 @@ def cmd_add(args, cfg):
         if not tpl.exists():
             die(f"template not found: {tpl}")
         ledger.parent.mkdir(parents=True, exist_ok=True)
-        ledger.write_text(tpl.read_text())
+        write_atomic(ledger, tpl.read_text(encoding="utf-8"))
         created = True
 
     # Re-adding an already-registered project is a routine thing to do -- `doctor` tells you
@@ -1277,6 +1317,14 @@ def cmd_progress(args, cfg):
 def cmd_snapshot(args, cfg):
     on = args.date or today_str()
     for p, led in _each(args, cfg):
+        # Same guard `collect` carries, and for the same reason -- see `records_after`.
+        # Without it, `snapshot --date <a day before the last record>` wrote today's boxes
+        # into the past, and every later reading of variance, carry-over and closed work
+        # was computed against a state that never existed.
+        if records_after(p["name"], on):
+            print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so box "
+                  f"state is left alone -- the ledger only holds today. Nothing written")
+            continue
         snap = record_progress(led, on)
         merge_stats(on, p["name"], snap)
         boxes = f"({snap['cb_done']}/{snap['cb_total']} boxes)"
@@ -1554,7 +1602,7 @@ def cmd_note(args, cfg):
         lines.insert(j + 2, bullet)
     else:
         lines[j:j] = [header, "", bullet, ""]
-    path.write_text("\n".join(lines))
+    write_atomic(path, "\n".join(lines))
     print(f"[{p['name']}] note added -> {path}\n{bullet}")
 
 

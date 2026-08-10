@@ -411,6 +411,45 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+ATOMIC_WRITE_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+import tempfile
+from pathlib import Path
+from unittest import mock
+import hey
+
+d = Path(tempfile.mkdtemp())
+target = d / 'TASKS.local.md'
+target.write_text('the only copy', encoding='utf-8')
+
+# The ledger is never committed, so a truncated one is gone for good. An interrupted write
+# has to leave the previous contents exactly where they were.
+with mock.patch.object(Path, 'replace', side_effect=KeyboardInterrupt):
+    try:
+        hey.write_atomic(target, 'half of a new file')
+    except KeyboardInterrupt:
+        pass
+assert target.read_text(encoding='utf-8') == 'the only copy', target.read_text()
+# And the temporary must not be left sitting beside it.
+assert not list(d.glob('*.tmp')), [str(x) for x in d.glob('*.tmp')]
+
+hey.write_atomic(target, 'new contents')
+assert target.read_text(encoding='utf-8') == 'new contents'
+assert not list(d.glob('*.tmp'))
+
+# Two writers must not share one temporary path -- with a fixed one, both write, the first
+# renames, and the second renames a path that is no longer there. Captured from the call
+# rather than asserted on the docstring: the name is the behaviour.
+import os
+seen = []
+real = Path.replace
+with mock.patch.object(Path, 'replace', autospec=True,
+                       side_effect=lambda self, t: (seen.append(self.name), real(self, t))[1]):
+    hey.write_atomic(target, 'third')
+assert seen and str(os.getpid()) in seen[0], seen
+assert target.read_text(encoding='utf-8') == 'third'
+"""
+
 TOKEN_COST_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 from board import token_cost, total_tokens
@@ -861,6 +900,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "an interrupted write leaves the previous file intact":
+            ATOMIC_WRITE_PROBE.format(here=str(HERE)),
         "token cost is priced only from rates somebody supplied":
             TOKEN_COST_PROBE.format(here=str(HERE)),
         "a day's commit span is a measure, and its absence is not zero":
@@ -903,6 +944,12 @@ def main() -> int:
         # the ledger holds only today, so it would move the baseline and zero the newer day.
         ([board, "collect", "--date", two_days_ago], "collect: a past day keeps its hands off "
          "box state", "not collected - a later day is already recorded"),
+        # `snapshot --date` is the same door with no lock on it: it wrote today's boxes
+        # under an earlier date, and every later variance, carry-over and closed-work
+        # figure was then computed against a state that never existed.
+        ([hey, "snapshot", "--date", two_days_ago],
+         "snapshot: a past day keeps its hands off box state too",
+         "is before a day already recorded"),
         ([hey, "carryover", "--days", "1"], "carry-over"),
         # The blocker is dated 2020 on its own line, and the fixture has two days of
         # history. Reading the age off the records would call it a day or two old; the
