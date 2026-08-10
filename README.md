@@ -6,7 +6,7 @@
          🕘 Yesterday   Theme bundler swapped to esbuild (#20)
          🔧 Pick up     wt-checkout  1 commit(s) unpushed
          📋 Checklist   3 / 13 boxes closed
-         🎯 Today       AI 0.4 of 1.0     two subitems you can close
+         🎯 Today       Heading anchors, then the image pipeline
 ```
 
 <img src="docs/icon.png" width="76" alt="">
@@ -58,12 +58,9 @@ tomorrow I go looking for yesterday's half-finished work all over again.
    Effort      0.4 / 5.6 AI-days closed   5.2 left · 1.0 in progress
 
 📈 Output  08-04 (Tue)
-   closed   0.00 AI-days        best 1.64 AI-days on 07-29 (Wed)
+   closed   0.00 AI-days
    code     38,330 lines
    tokens   1.9M tokens
-    1  07-29 (Wed)  ████████████████████  1.64 AI-days  peak
-    2  07-30 (Thu)  █████████▊            0.80 AI-days
-    3  08-03 (Mon)  ███████▎              0.60 AI-days
 
 🎯 Today
    1. Heading anchors — two headings with the same title collide on one
@@ -105,7 +102,7 @@ never committed.
 ```
 
 **The scripts** parse it and do every calculation — box counts, effort totals, daily
-output, ranking, burndown, estimate variance. `hey.py` and `board.py`, python and the
+output, burndown, estimate variance. `hey.py` and `board.py`, python and the
 standard library, nothing else.
 
 **The skills** are the part the model reads. They say which script to call and how to
@@ -232,33 +229,25 @@ guesses.
 | code | lines added and removed, across every worktree of the project |
 | tokens | Claude Code transcript usage, across every worktree. Cache reads excluded |
 
-**Only closed work is ranked**, and only against your own past records. No user data is
-sent or received.
+**None of the three is ranked.** No user data is sent or received.
 
 ```
-Today  closed 1.64 AI-days    #1 of last 4 days
-
- 1  08-05 (Wed)  ████████████████████  1.64 AI-days  peak
- 2  08-04 (Tue)  ██████████████████▌   1.52 AI-days
- 3  08-03 (Mon)  ██████▏               0.51 AI-days
- 4  07-31 (Fri)  ████▌                 0.37 AI-days
-    avg of 4     ████████████▎         1.01 AI-days
-
-Peak. Competent for exactly one day.  (1.64 AI-days)
-
-  code     41,204 lines
-  tokens   1.9M tokens
+📈 Output  08-07 (Fri)
+   closed   0.00 AI-days
+   code     2,461 lines
+   tokens   3.5M tokens
 ```
 
-Code and tokens are counted and shown, never ranked. Both measure activity rather than
-accomplishment — a refactor that deletes a bad implementation and a session that retried
-three times each push them up — so there is no best day for either, and no action to take
-from one.
+Days used to be scored against each other here — a board, a streak, a weekly pace, a
+personal best. All of it is gone. Closed work rests on estimates the tool itself cannot
+calibrate, and code and tokens measure activity rather than accomplishment — a refactor
+that deletes a bad implementation and a session that retried three times each push them
+up. Every one of those numbers dressed a bookkeeping choice as a result. What is left is
+the record and the two cards that read it back.
 
 The very first record is a **baseline** and carries no closed figure. There is no earlier
 day to compare it against, so counting its closed boxes would credit work finished before
-recording began, and that number would then be the peak every later day is measured
-against. Code and token counts are exact from day one.
+recording began. Code and token counts are exact from day one.
 
 Where the three metrics disagree, that is information. High code and token counts with
 zero closed work means the work happened but no item closed — either items are sized too
@@ -312,7 +301,7 @@ lives in [docs/ko/README.ko.md](docs/ko/README.ko.md).
 A new language pack goes in `plugins/hey/scripts/strings.py`:
 
 1. Add a key for the language to each table keyed by language — `WEEKDAYS`,
-   `METRIC_LABELS`, `UNITS`, `CARD`, `FLAIR`, `STREAK`, `STATE_LABELS`, `BLOCKER_WORDS`,
+   `METRIC_LABELS`, `UNITS`, `CARD`, `FLAIR`, `STATE_LABELS`, `BLOCKER_WORDS`,
    `BLOCKER_SECTIONS`
 2. Append the translated heading to each row of `SECTIONS`, which is keyed by section
    instead
@@ -347,9 +336,9 @@ true width to leave room for the margin the transcript adds.
 ## 🗂 Where data lives
 
 ```
-~/.hey/config.json          registered projects with their base branch and goals,
+~/.hey/config.json          registered projects with their base branch,
                             default scope, language
-~/.hey/stats.jsonl          daily snapshots. Ranking, burndown, carry-over, variance
+~/.hey/stats.jsonl          daily snapshots. Burndown, carry-over, variance
 <project>/TASKS.local.md    the ledger
 ```
 

@@ -102,8 +102,8 @@ python3 "$BOARD" wrap
 ```
 
 Last, so it sees the log from step 1 and the record from step 2. `wrap` gathers today's
-log, loose worktrees, today's notes, progress, weekly pace, the output board and blockers
-in one pass. Use it instead of the individual commands.
+log, loose worktrees, today's notes, progress, the day's output and blockers in one pass.
+Use it instead of the individual commands.
 
 **Paste what it printed, verbatim, in a fenced code block, as the first thing in your
 reply.** The user does not see tool output; a card you only summarise is a card they never
@@ -126,8 +126,9 @@ Everything you write goes underneath it.
 - `wt-checkout` has 2 commits no remote has
 ```
 
-Close with one sentence, grounded in the numbers that actually printed. If the day was
-behind, say it was behind.
+Close with one sentence, grounded in the numbers that actually printed. There is no pace
+or goal to fall behind of, so do not imply one — if the day closed nothing, say that, and
+say which item was closest.
 
 ## Wording
 

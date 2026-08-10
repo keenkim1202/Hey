@@ -20,8 +20,8 @@ LC_TIME=C date "+%Y-%m-%d (%a)"
 python3 "$BOARD" brief
 ```
 
-`brief` gathers yesterday's log, loose worktrees, notes, progress, weekly pace, the
-output board and blockers in a single pass. **Do not fire the individual commands
+`brief` gathers yesterday's log, loose worktrees, notes, progress, the day's output and
+blockers in a single pass. **Do not fire the individual commands
 instead** — that costs ten round trips and floods the context for the same information.
 
 **Then paste what it printed, verbatim, in a fenced code block, as the first thing in
@@ -84,8 +84,12 @@ the state most easily lost. Point at the directory and branch; do not switch to 
 **[ Today  8h = AI 1.0 ]**
 1. Wire the app root — OnboardingView + toast host in OrchardApp     AI 0.1
 2. Extend CartStore — expose loading state, 3-stage error handler        AI 0.3 (rough split)
-   Total AI 0.4. You are 0.2 behind the weekly pace, so there is room for one more.
+   Total AI 0.4 of the 1.0 a day holds, so there is room for one more.
 ```
+
+**There is no pace, goal, streak or rank to compare against — the scripts print none of
+them.** The only budget is the 8 hours in front of you. If you find yourself reaching for
+a number the card did not print, that is the moment you are about to invent one.
 
 ### Blockers
 
@@ -101,9 +105,10 @@ the card counted but did not have room to show, and separates a blocker marked
 
 ### One closing line
 
-The board already printed a line with personality. Add at most one sentence of your own,
-grounded in the numbers that actually printed. **If the user is behind, say so** and name
-the one item that would recover it.
+The card prints a line with personality **only when closed work is zero** — that is the
+one case it has something to say. Add at most one sentence of your own, grounded in the
+numbers that actually printed. There is no pace or goal to be behind of, so do not imply
+one; if something is genuinely stuck or slipping, name the item, not a shortfall.
 
 ## Wording
 

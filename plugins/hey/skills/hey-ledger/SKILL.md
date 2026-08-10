@@ -20,8 +20,8 @@ Config and history live in `~/.hey/`.
 
 | File | What |
 |---|---|
-| `config.json` | registered projects with their base branch and goals, default scope, language |
-| `stats.jsonl` | daily snapshots. Ranking, burndown, carry-over and variance derive from these |
+| `config.json` | registered projects with their base branch, default scope, language |
+| `stats.jsonl` | daily snapshots. Burndown, carry-over and variance derive from these |
 
 ## Projects and scope
 

@@ -635,6 +635,61 @@ def string_pack_checks() -> list:
     return out
 
 
+# Features removed on purpose -- board.py's module docstring says why. No script prints any
+# of them any more.
+REMOVED_FEATURES = ("weekly pace", "주간 페이스", "personal best", "개인 최고",
+                    "streak", "스트릭", "ranked", "ranking", "랭킹", "순위",
+                    "daily goal", "weekly goal", "일일 목표", "주간 목표")
+
+# Saying the feature does not exist is the point of several of these sentences, not a
+# violation of the rule. Checked on the line, which is where the negation sits.
+DENIALS = ("no ", "not ", "never", "none of", "nothing", "gone", "used to",
+           "없", "않", "예전에는")
+
+
+def removed_feature_checks() -> list:
+    """Prose must not describe a feature the scripts no longer have.
+
+    Three days after the ranking layer came out of the code, the README still advertised a
+    leaderboard and two skills still told the model to report a `weekly pace` no command
+    produces. That last part is the expensive half: a tool whose whole claim is that the
+    model never writes a number by eye had its own instructions asking for one, and the
+    only place left to get it was invention.
+
+    **Fenced blocks are skipped**, so a stale card *example* still slips through -- the
+    banner and the sample output in the README both did. Catching those means parsing card
+    layout out of a code fence, which is a different job than this one. Prose is where the
+    claims live, and prose is what this covers.
+    """
+    root = HERE.parent.parent.parent
+    files = [root / "README.md", root / "docs" / "ko" / "README.ko.md"]
+    files += sorted((HERE.parent / "skills").glob("*/SKILL.md"))
+    files += sorted((HERE.parent / "commands").glob("*.md"))
+
+    out = []
+    for path in files:
+        if not path.exists():
+            continue
+        fenced = False
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            low = line.lower()
+            if any(d in low for d in DENIALS):
+                continue
+            for term in REMOVED_FEATURES:
+                if term in low:
+                    # Every skill's file is named SKILL.md, so the basename alone does not
+                    # say which one failed.
+                    where = path.relative_to(root)
+                    out.append((f"{where}:{n} names `{term}`, which no script prints",
+                                line.strip()))
+    return out
+
+
 def static_checks() -> list:
     """Manifest and frontmatter checks. No fixture, no subprocess, no network.
 
@@ -847,7 +902,8 @@ def main() -> int:
     # Reported per group so a clean group still says so. Folding them together meant one
     # broken manifest silenced the all-clear for everything else checked statically.
     for group, probe in (("manifests and component names", static_checks),
-                         ("language packs agree", string_pack_checks)):
+                         ("language packs agree", string_pack_checks),
+                         ("docs claim no removed feature", removed_feature_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)
