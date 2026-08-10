@@ -144,6 +144,27 @@ def total_tokens(row: dict) -> int:
     return t.get("in", 0) + t.get("out", 0) + t.get("cache_write", 0)
 
 
+def token_cost(row: dict, cfg: dict) -> float | None:
+    """What the day's tokens cost, or `None` when nobody has said what they cost.
+
+    Rates live in `config.json` under `token_cost`, per million tokens, per kind. There is
+    no built-in table and there will not be one: a price hard-coded here is wrong the week
+    it changes and wrong silently, which is the same failure as a multiplier nobody
+    measured. Absent rates mean no cost line, not a cost of zero.
+
+    **Every kind counts here, `cache_read` included** -- unlike the token figure beside it,
+    which drops cache reads because they say more about reuse than about work. Cost is the
+    opposite case: a long session reads the cache hundreds of millions of times, and
+    leaving that out understates the bill by most of it.
+    """
+    rates = cfg.get("token_cost") or {}
+    t = row.get("tokens") or {}
+    kinds = [k for k in ("in", "out", "cache_read", "cache_write") if k in rates]
+    if not kinds:
+        return None
+    return sum(t.get(k, 0) * float(rates[k]) for k in kinds) / 1_000_000
+
+
 def total_code(row: dict) -> int:
     c = row.get("code") or {}
     return c.get("added", 0) + c.get("deleted", 0)
@@ -533,7 +554,15 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             if row is not None and not has(row):
                 out.append(f"{INDENT}{pad(lbl, 9)}{S.card('baseline', LANG)}")
                 continue
-            out.append(f"{INDENT}{pad(lbl, 9)}{f(get(row) if row else 0)}")
+            val = f(get(row) if row else 0)
+            # Cost rides on the token row rather than taking one of its own: it is the
+            # same measurement read for a different question, and a reader comparing the
+            # two wants them on one line. Printed only when rates were configured.
+            if m == "tokens" and row is not None:
+                cost = token_cost(row, cfg)
+                if cost is not None:
+                    val += f"   {cfg.get('token_cost', {}).get('currency', '$')}{cost:,.2f}"
+            out.append(f"{INDENT}{pad(lbl, 9)}{val}")
         # The zero line moved here when the board it used to live on was removed. It is the
         # one piece of commentary that does work, and only in the case `contradicts_zero`
         # picks out.

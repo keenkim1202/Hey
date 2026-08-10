@@ -411,6 +411,31 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+TOKEN_COST_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from board import token_cost, total_tokens
+
+row = {{'tokens': {{'in': 1_000_000, 'out': 1_000_000,
+                   'cache_read': 100_000_000, 'cache_write': 1_000_000}}}}
+# No rates configured is not a cost of zero. A cost line nobody supplied the numbers for
+# is the same failure as a multiplier nobody measured.
+assert token_cost(row, {{}}) is None
+assert token_cost(row, {{'token_cost': {{}}}}) is None
+
+rates = {{'token_cost': {{'in': 3.0, 'out': 15.0, 'cache_read': 0.3, 'cache_write': 3.75}}}}
+got = token_cost(row, rates)
+assert abs(got - (3 + 15 + 30 + 3.75)) < 1e-9, got
+# The displayed token figure drops cache reads, and cost must not: here they are 100 of
+# the 103 million, and thirty of the fifty-two dollars. Leaving them out understates the
+# bill by most of it, which is the opposite mistake from the one the display avoids.
+assert total_tokens(row) == 3_000_000, total_tokens(row)
+assert got > 4 * (3 + 15 + 3.75) / 4, got
+
+# A partial table prices what it names and ignores the rest, rather than charging zero.
+part = token_cost(row, {{'token_cost': {{'out': 15.0}}}})
+assert abs(part - 15.0) < 1e-9, part
+"""
+
 COMMIT_SPAN_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 from datetime import date
@@ -836,6 +861,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "token cost is priced only from rates somebody supplied":
+            TOKEN_COST_PROBE.format(here=str(HERE)),
         "a day's commit span is a measure, and its absence is not zero":
             COMMIT_SPAN_PROBE.format(here=str(HERE), proj=str(proj)),
         "tokens are charged to a project by path, not by string prefix":

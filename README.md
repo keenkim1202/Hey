@@ -279,6 +279,27 @@ The very first record is a **baseline** and carries no closed figure. There is n
 day to compare it against, so counting its closed boxes would credit work finished before
 recording began. Code and token counts are exact from day one.
 
+### What the tokens cost
+
+Give `config.json` a `token_cost` table and the card prints the day's spend beside the
+count. Rates are per million, per kind, and there is no built-in table — a price hard-coded
+here would be wrong the week it changes, silently, which is the same failure as a
+multiplier nobody measured. No rates means no cost line, never a cost of zero.
+
+```json
+"token_cost": { "currency": "$", "in": 3.0, "out": 15.0,
+                "cache_read": 0.30, "cache_write": 3.75 }
+```
+
+```
+tokens   2.1M tokens   $57.77
+```
+
+**The cost counts cache reads and the token figure beside it does not**, on purpose. As a
+measure of activity, cache reads say more about reuse than about work. As a bill they are
+most of it — the 2.1M above sits next to 151M cache reads, and forty-five of those
+fifty-seven dollars are them. Same record, two questions, two aggregations.
+
 Where the three metrics disagree, that is information. High code and token counts with
 zero closed work means the work happened but no item closed — either items are sized too
 large, or boxes are not being checked. `/seeya` asks which instead of quietly picking the
@@ -369,7 +390,7 @@ true width to leave room for the margin the transcript adds.
 
 ```
 ~/.hey/config.json          registered projects with their base branch,
-                            default scope, language
+                            default scope, language, optional token rates
 ~/.hey/stats.jsonl          daily snapshots. Burndown, carry-over, variance
 <project>/TASKS.local.md    the ledger
 ```
