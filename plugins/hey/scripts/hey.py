@@ -1772,12 +1772,32 @@ def match_marker(keys, marker: str) -> tuple:
     return (hits[0], []) if len(hits) == 1 else (None, hits)
 
 
+def lead_time(pr: dict) -> str:
+    """`, N day(s) open` for a merged pull request, or nothing when the dates are missing.
+
+    An outcome rather than an output: it does not move because a refactor deleted a
+    thousand lines or a session retried three times, which is the failing that keeps code
+    and token counts off every ranking in this tool. Rendered in whole days because the
+    hours inside one are review latency and timezones, not work.
+    """
+    created, merged = pr.get("createdAt"), pr.get("mergedAt")
+    if not (created and merged):
+        return ""
+    try:
+        d0 = date.fromisoformat(created[:10])
+        d1 = date.fromisoformat(merged[:10])
+    except ValueError:
+        return ""
+    n = (d1 - d0).days
+    return f", merged same day" if n <= 0 else f", {n} day(s) open"
+
+
 def cmd_pr_sync(args, cfg):
     """Collect `closes <item key>` markers from merged PR bodies. Never checks anything off."""
     for p, led in _each(args, cfg):
         root = Path(p["root"])
         raw = _sh(["gh", "pr", "list", "--state", "merged", "--limit", str(args.limit),
-                   "--json", "number,title,body,mergedAt"], root)
+                   "--json", "number,title,body,createdAt,mergedAt"], root)
         if not raw:
             print(f"[{p['name']}] could not read PRs via gh")
             continue
@@ -1789,8 +1809,12 @@ def cmd_pr_sync(args, cfg):
                                flags=re.IGNORECASE)
             if not marks:
                 continue
+            # Lead time is computed here and kept nowhere. GitHub already holds the
+            # authoritative open and merge dates, and `/hey-sync` refuses to keep a second
+            # copy of them for the reason a stale copy is worse than none. Recomputing two
+            # dates that arrived in the same response costs nothing and stores nothing.
             print(f"[{p['name']}] #{pr['number']} {pr['title']}"
-                  f"  ({(pr.get('mergedAt') or '')[:10]})")
+                  f"  ({(pr.get('mergedAt') or '')[:10]}{lead_time(pr)})")
             for m in marks:
                 hit, ambiguous = match_marker(keys, m)
                 if hit:
@@ -1970,6 +1994,55 @@ def cmd_draft_log(args, cfg):
                 print(f"- ... and {len(rows) - 5} more commit(s) this day, not listed")
 
 
+SPEC_PHASE = re.compile(r"^#+\s*(?:Phase\s+(\d+)|(Final Phase))\s*:\s*(.+?)\s*$")
+SPEC_TASK = re.compile(r"^\s*- \[([ xX])\]\s+(T\d+)\s+(.*)$")
+SPEC_MARK = re.compile(r"\[(P|US\d+)\]")
+
+
+def cmd_import_tasks(args, cfg):
+    """A spec-kit `tasks.md` reshaped into ledger items. Prints; never writes.
+
+    Spec generators stop at `tasks.md` — a list, in execution order, with no history and
+    no notion of a day. That is the point this tool starts from, so the boundary between
+    them is a format conversion and nothing more.
+
+    Two things carry across and one deliberately does not. The `T001` ids become
+    `[id t001]`, which is the stable key hey wants and the thing a hand-written ledger most
+    often lacks. `[P]` and `[US1]` are kept in the text, where a person reads them. **No
+    estimate is invented** -- `tasks.md` has none, and a `0 MD / AI 0` written here would
+    be a number nobody chose, sitting in the column the whole ledger is counted from.
+    `doctor` reports the missing estimates, which is the correct next thing to be nagged
+    about.
+    """
+    src = Path(args.path).expanduser()
+    if not src.exists():
+        die(f"not found: {src}")
+    phase, out, n = None, [], 0
+    for ln in src.read_text().split("\n"):
+        if m := SPEC_PHASE.match(ln):
+            num, final, title = m[1], m[2], m[3]
+            phase = f"P{num}" if num else "PZ"
+            out.append(f"\n## {phase}. {title} (? MD / AI ?)\n")
+        elif t := SPEC_TASK.match(ln):
+            if phase is None:
+                # Tasks before any phase heading would otherwise land in section `?`, and
+                # `<phase>|<name>` is the key, so they would all collide there.
+                out.append("\n## P0. Imported (? MD / AI ?)\n")
+                phase = "P0"
+            box, tid, rest = t[1], t[2], t[3]
+            marks = SPEC_MARK.findall(rest)
+            desc = SPEC_MARK.sub("", rest).strip()
+            tail = f" — {', '.join(marks)}" if marks else ""
+            out.append(f"- [{box}] **{desc}** `[id {tid.lower()}]`{tail}")
+            n += 1
+    if not n:
+        die(f"no `- [ ] T001 ...` task lines in {src}. Is this a spec-kit tasks.md?")
+    print(f"[import] {n} task(s) from {src}. **No estimates** — tasks.md has none, and one "
+          f"invented here\n  would be a number nobody chose. Estimate them with "
+          f"`/hey-plan` step 3, then paste.")
+    print("\n".join(out))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="hey.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2040,6 +2113,9 @@ def main() -> None:
     sp = scoped(add("context", cmd_context, help="worktrees, branches and files touched on a date"))
     sp.add_argument("--date")
     sp.add_argument("--files", type=int, default=6)
+    sp = add("import-tasks", cmd_import_tasks,
+             help="a spec-kit tasks.md as ledger items. Prints, never writes")
+    sp.add_argument("path", help="path to tasks.md")
     sp = scoped(add("draft-log", cmd_draft_log,
                     help="work-log entries drafted from git history. Prints, never writes"))
     sp.add_argument("--since", type=int, default=14, help="how many days back")

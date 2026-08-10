@@ -986,6 +986,27 @@ def main() -> int:
     check("draft-log: a commit two worktrees can both see is drafted once",
           bool(shas) and len(shas) == len(set(shas)), out)
 
+    # A spec generator stops at `tasks.md`; this tool starts there, so the boundary is a
+    # format conversion. `T001` becoming `[id t001]` is the half that matters — it is the
+    # stable key a hand-written ledger most often lacks, arriving for free.
+    spec = tmp / "tasks.md"
+    spec.write_text("# Phase 1: Setup\n\n"
+                    "- [x] T001 Create project structure\n"
+                    "- [ ] T002 [P] Configure linting in .eslintrc\n\n"
+                    "# Final Phase: Polish\n\n"
+                    "- [ ] T040 [P] [US1] Update the README\n")
+    code, out = run([hey, "import-tasks", str(spec)], env, proj)
+    check("import-tasks: task ids arrive as `[id ...]`, and `[x]` survives",
+          code == 0 and "`[id t001]`" in out and "- [x] **Create project structure**" in out,
+          out)
+    check("import-tasks: `[P]` and `[US1]` are kept as text, not dropped",
+          "P, US1" in out, out)
+    # The column the whole ledger is counted from is the one place to invent nothing.
+    check("import-tasks: no estimate is invented for tasks that carry none",
+          "AI 0" not in out and "? MD / AI ?" in out, out)
+    check("import-tasks: a file with no task lines says so rather than printing nothing",
+          run([hey, "import-tasks", str(tmp / "TASKS.local.md")], env, proj)[0] == 2, "")
+
     code, out = run([hey, "note", "from nowhere"], env, tmp)
     check("out of scope: a note is sent to `--project`, since it lands in one ledger",
           code == 2 and "--project" in out and "--scope all" not in out, out)
@@ -1278,6 +1299,7 @@ def main() -> int:
         "  cat <<'JSON'\n"
         '[{"number": 42, "title": "wire up alpha",'
         ' "body": "closes P0|First item\\ncloses P0\\ncloses P9|Nope",'
+        ' "createdAt": "2026-08-02T09:00:00Z",'
         ' "mergedAt": "2026-08-05T10:00:00Z"}]\n'
         "JSON\n"
         "  exit 0\n"
@@ -1294,6 +1316,11 @@ def main() -> int:
     # The per-PR rows are what a reader skims. A merged PR naming an item that is still
     # open is the one shape here that asks for a decision -- work landed, ledger has not
     # heard -- so it is gathered at the end instead of being left in the scroll.
+    # How long the pull request stayed open, computed from two dates that arrived in the
+    # same response and stored nowhere. GitHub holds the authoritative copy, and a second
+    # one kept here would go stale and then be believed.
+    check("pr-sync: says how long the PR was open, without keeping a copy of the dates",
+          "3 day(s) open" in out, out)
     check("pr-sync: gathers the still-unchecked items into one closing list",
           "item(s) named by a merged PR and still unchecked" in out
           and "(#42)" in out, out)

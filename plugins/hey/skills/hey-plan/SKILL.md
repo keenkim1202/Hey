@@ -14,6 +14,18 @@ ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"   # Codex names it PLUGIN_ROOT
 HEY="$ROOT/scripts/hey.py"
 ```
 
+**If the input is a spec-kit `tasks.md`, convert it rather than re-reading it:**
+
+```bash
+python3 "$HEY" import-tasks path/to/tasks.md
+```
+
+It prints ledger-shaped phases and items and writes nothing. `T001` becomes `[id t001]`,
+which is the stable key step 2 asks for, arriving for free. `[P]` and `[US1]` are kept in
+the item text. **Estimates are left blank on purpose** — `tasks.md` carries none, and the
+estimate column is the one place in this file to invent nothing. Steps 3 and 4 are still
+yours to do, on the items it printed.
+
 ## 1. Read it, then find what is undecided
 
 **Finding the undecided parts comes before estimating.** An unknown hidden inside an
