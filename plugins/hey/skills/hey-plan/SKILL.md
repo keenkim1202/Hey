@@ -165,30 +165,6 @@ Then report:
 - The three largest items and why they are large
 - What the estimate excludes
 
-## 7. Offer what the plan calls for, once
-
-```bash
-python3 "$HEY" suggest
-```
-
-Run it **after** the items are in the ledger, never before — it reads the plan, so it has
-nothing to read until the plan exists. It prints 💡 lines, each naming the item that
-produced it, and prints nothing when there is nothing to say.
-
-**Pass its output through, and add to it only under these rules:**
-
-- **Never install, enable or configure anything.** Not the script's job and not yours.
-  Print the command; the person runs it or does not
-- **Silence beats a weak suggestion.** If they already have something that covers it, say
-  nothing — or, if the thing you would suggest is clearly better, say that and why, once
-- **Only name a capability you have confirmed exists.** `suggest` reads the marketplaces
-  configured on this machine, so what it prints is real. If you want to name something it
-  did not print — a Korean plan gives its English catalogue almost nothing to match, so
-  this happens — confirm the plugin is really there before naming it. **A recommendation
-  the reader cannot find is worse than none:** they go looking, and stop trusting the rest
-- **One line of evidence per suggestion**, quoting the item. "Your plan has `X`" is the
-  whole argument; without it this is an advertisement
-
 ## Wording
 
 **How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.

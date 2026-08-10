@@ -24,15 +24,7 @@ python3 "$HEY" carryover --days 3
 python3 "$HEY" variance
 python3 "$HEY" log --limit 7
 python3 "$HEY" notes --since 7
-python3 "$HEY" suggest
 ```
-
-`suggest` prints 💡 lines for capabilities the plan calls for and is not using, each
-citing the item that produced it, and prints nothing when there is nothing to say. **A
-weekly recap is the most it should ever appear in** — daily, the same line becomes an
-advertisement and stops being read. Pass its output through; **never install, enable or
-configure anything**, and do not name a capability it did not print unless you have
-confirmed the thing exists.
 
 A weekly recap is the one place the extra calls are worth it — but if the user only wants a
 quick read, `board.py wrap` covers most of it in one call.
