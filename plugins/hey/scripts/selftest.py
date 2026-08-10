@@ -792,6 +792,41 @@ def encoding_checks() -> list:
     return out
 
 
+def version_checks() -> list:
+    """The pinned Codex version must have a changelog entry, in both languages.
+
+    Claude Code installs from the branch, so every commit reaches it. Codex pins a version
+    and only sees an update when that number moves -- and it did not move for seventy-one
+    commits, because the rule lived in the README and nothing enforced it. Codex users
+    received none of them, the fixes that stop a ledger being truncated included.
+
+    Matched against `CHANGELOG.md` rather than asked of git: CI checks out at depth 1, so
+    there is no history here to ask when each last changed. The side effect is the point --
+    raising the version now requires writing down what changed, which is the thing a Codex
+    user actually needs at the moment the update arrives.
+    """
+    root = HERE.parent.parent.parent
+    manifest = HERE.parent / ".codex-plugin" / "plugin.json"
+    if not manifest.exists():
+        return []
+    try:
+        version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
+    except json.JSONDecodeError as e:
+        return [("codex plugin.json does not parse", str(e))]
+    if not version:
+        return [("codex plugin.json has no `version`, and Codex requires one", "")]
+    out = []
+    for name in ("CHANGELOG.md", "CHANGELOG.ko.md"):
+        log = root / name
+        if not log.exists():
+            out.append((f"{name} is missing, so version {version} would ship with no "
+                        f"note of what changed", ""))
+        elif f"## {version}" not in log.read_text(encoding="utf-8"):
+            out.append((f"{name} has no `## {version}` entry, so the pinned version and "
+                        f"the changelog disagree", f"version={version}"))
+    return out
+
+
 def scoped_hits(text: str) -> list:
     """Removed-feature terms `text` asserts, ignoring the sentences that deny them.
 
@@ -1103,7 +1138,8 @@ def main() -> int:
     for group, probe in (("manifests and component names", static_checks),
                          ("language packs agree", string_pack_checks),
                          ("docs claim no removed feature", removed_feature_checks),
-                         ("every read and write names its encoding", encoding_checks)):
+                         ("every read and write names its encoding", encoding_checks),
+                         ("the pinned version has a changelog entry", version_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)

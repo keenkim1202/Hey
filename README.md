@@ -446,6 +446,12 @@ The two manifests differ on purpose:
 - **Codex** requires strict semver, so `.codex-plugin/plugin.json` pins one and has to be
   bumped for Codex users to see an update
 
+That second rule sat here for seventy-one commits and was followed on none of them, so the
+self-test enforces it now: the pinned version must have a `## <version>` entry in
+[CHANGELOG.md](CHANGELOG.md) and its Korean twin. Raising the number therefore means
+writing down what changed, which is what a Codex user needs at the moment the update lands.
+Claude Code users have no version to read at all, so that file is where they find out too.
+
 The self-test runs in two stages:
 
 1. **Static checks** — manifests parse, every skill declares a name and a description, no
