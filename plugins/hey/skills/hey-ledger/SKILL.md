@@ -37,11 +37,31 @@ python3 "$HEY" add <root> --base <branch>  # when the remote's default branch is
 python3 "$HEY" remove <name>               # unregister. Ledger and history are kept
 python3 "$HEY" scope current|all           # default scope
 python3 "$HEY" doctor                      # what is misconfigured, all of it at once
+python3 "$HEY" draft-log --since 14        # work log drafted from git. Prints, never writes
 ```
 
 **Use `--init` rather than copying the template yourself.** It refuses to register a
 linked worktree and it puts the ledger at the registered path, which are the two rules
 this file spends the most words on. Still ask the user before creating one.
+
+### After `--init`, offer the draft
+
+A ledger created today has no past, so the first `/wassup` reports nothing on a repository
+that may hold months of work. `draft-log` reads the history and prints work-log entries in
+the shape the ledger wants.
+
+**It prints and stops. You paste it in — after the user has read it.** A commit subject
+says what changed, not how far the work got or what is left, and those are the two things
+the work log exists to carry. So:
+
+1. Run it, show the output as it printed
+2. Say plainly that this is drafted from commit subjects, not a record of what happened
+3. Let the user cut, merge and correct. **Dates and commit hashes come from git — never
+   edit those.** The prose is theirs
+4. Only then write it into the work log, newest first
+
+Do not run it unasked on a project that already has a work log. It answers the empty-file
+problem, and appending a second version of days already written up is not that.
 
 When something reports nothing and you cannot see why, run `doctor` before guessing. It
 checks the base branch, the ledger's headings, estimates, and the history file, and every

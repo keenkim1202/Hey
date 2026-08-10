@@ -943,6 +943,26 @@ def main() -> int:
     check("card: the first record reads as a baseline, not as a day that closed nothing",
           S.card("baseline", args.lang).split(" ")[0] in out and "0.00" not in out, out)
 
+    # A ledger created today has no past, so `draft-log` reads it out of git instead. The
+    # author is named rather than resolved: the fixture's commits carry `GIT_AUTHOR_EMAIL`
+    # from the environment, while `git config user.email` would find whatever identity the
+    # machine running the test happens to have -- which is nothing in CI and a real address
+    # on a laptop, so the default would make this pass in one place and fail in the other.
+    before = (proj / "TASKS.local.md").read_text()
+    code, out = run([hey, "draft-log", "--since", "30",
+                     "--author", "selftest@example.com"], env, proj)
+    check("draft-log: drafts work-log headings out of git history",
+          code == 0 and "###" in out, out)
+    # Printing is the whole contract. A commit subject says what changed, not how far the
+    # work got, so nothing here is a work-log entry until a person says it is.
+    check("draft-log: prints, and leaves the ledger untouched",
+          (proj / "TASKS.local.md").read_text() == before, "the ledger was modified")
+    # The fixture has a linked worktree, and worktrees share one ref store, so a commit is
+    # reachable from both and gets read twice before it is deduplicated.
+    shas = re.findall(r"\(([0-9a-f]{7,})\)$", out, re.M)
+    check("draft-log: a commit two worktrees can both see is drafted once",
+          bool(shas) and len(shas) == len(set(shas)), out)
+
     code, out = run([hey, "note", "from nowhere"], env, tmp)
     check("out of scope: a note is sent to `--project`, since it lands in one ledger",
           code == 2 and "--project" in out and "--scope all" not in out, out)

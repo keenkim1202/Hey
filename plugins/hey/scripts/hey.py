@@ -1833,6 +1833,65 @@ def cmd_context(args, cfg):
                 print(f"    {len(st.split(chr(10)))} uncommitted - this is where to pick up")
 
 
+def cmd_draft_log(args, cfg):
+    """Work-log headings and bullets drafted from git history. Prints; never writes.
+
+    A ledger created today has no past, so the first `/wassup` has nothing to report on a
+    repository that may hold months of work. Turning commits into a first draft is
+    mechanical and belongs here. Deciding whether a draft is *true* is not: a commit
+    subject says what changed, not how far the work got or what is left, and those are the
+    two things the work log exists to carry. So this stops at stdout. The skill shows the
+    draft, the user corrects it, and only then does anything reach the ledger -- the same
+    rule that keeps a box from being ticked by a marker nobody verified.
+    """
+    for p in projects_in_scope(cfg, args.scope, args.project):
+        root = Path(p["root"])
+        # Same resolution as code counting, for the same reason: the work log records
+        # *your* days, and a shared repository is full of other people's commits.
+        author = (args.author or cfg.get("author")
+                  or _sh(["git", "config", "user.email"], root))
+        if not author:
+            print(f"[{p['name']}] no git author resolved, so every author's commits are "
+                  f"drafted. Pass --author to narrow it")
+        last = date.today()
+        first = last - timedelta(days=args.since - 1)
+        # Both ends borrowed from `day_range` rather than spelled out again -- it is the
+        # one place that knows a day ends at 23:59:59 and not at 23:59.
+        span = [day_range(first.isoformat())[0], day_range(last.isoformat())[1]]
+
+        by_day, seen = {}, set()
+        for w in worktree_roots(root):
+            # Per worktree, because a detached one holds a HEAD that `--all` cannot see
+            # from anywhere else -- then deduplicated, because every other ref is shared.
+            cmd = ["git", "log", "--all", "--no-merges", *span,
+                   "--date=format:%Y-%m-%d", "--format=%cd %h %s"]
+            if author:
+                cmd.insert(2, f"--author={author}")
+            for ln in _sh(cmd, w).split("\n"):
+                parts = ln.split(" ", 2)
+                if len(parts) < 3 or parts[1] in seen:
+                    continue
+                seen.add(parts[1])
+                by_day.setdefault(parts[0], []).append((parts[1], parts[2]))
+
+        if not by_day:
+            print(f"[{p['name']}] no commits by {author or 'anyone'} in the last "
+                  f"{args.since} day(s). Nothing to draft")
+            continue
+        print(f"[{p['name']}] draft from {len(seen)} commit(s) over {len(by_day)} day(s). "
+              f"**Not a work log yet** - a commit says what changed, not how far it got")
+        for on in sorted(by_day, reverse=True):
+            rows = by_day[on]
+            print(f"\n### {fmt_date(on)}\n")
+            # Five is the ledger's own ceiling for a day's bullets. Past it the draft says
+            # how many it left out rather than quietly dropping them, because a day with
+            # twenty commits is exactly the day worth writing up by hand.
+            for sha, subject in rows[:5]:
+                print(f"- {subject} ({sha})")
+            if len(rows) > 5:
+                print(f"- ... and {len(rows) - 5} more commit(s) this day, not listed")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="hey.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1900,6 +1959,10 @@ def main() -> None:
     sp = scoped(add("context", cmd_context, help="worktrees, branches and files touched on a date"))
     sp.add_argument("--date")
     sp.add_argument("--files", type=int, default=6)
+    sp = scoped(add("draft-log", cmd_draft_log,
+                    help="work-log entries drafted from git history. Prints, never writes"))
+    sp.add_argument("--since", type=int, default=14, help="how many days back")
+    sp.add_argument("--author", help="defaults to the repository's `user.email`")
 
     args = ap.parse_args()
     args.fn(args, load_config())

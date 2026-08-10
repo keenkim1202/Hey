@@ -143,6 +143,10 @@ Then register a project and get a ledger:
 /wassup          # tomorrow morning, start here
 ```
 
+A ledger created today has no past, so `/hey-ledger` offers a work log drafted from your
+git history — `hey.py draft-log --since 14`, which prints and writes nothing. Commit
+subjects say what changed, not how far the work got, so you edit it before it goes in.
+
 To develop against a local checkout, register the path instead:
 
 ```bash
