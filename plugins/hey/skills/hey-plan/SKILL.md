@@ -40,19 +40,25 @@ Size an item to **what can be closed within a day**. Anything over `AI 1.0` gets
 ```markdown
 ## P1. Auth and onboarding (27.5 MD / AI 8.3)
 
-- [ ] **Social login, 4 providers** — Apple / Google / GitHub / Microsoft + server token exchange — 6 MD / AI 3.4
+- [ ] **Social login, 4 providers** `[id social-login]` — Apple / Google / GitHub / Microsoft + server token exchange — 6 MD / AI 3.4
   - [ ] Apple Sign In
   - [ ] Google Sign In
   - [ ] GitHub
   - [ ] Microsoft
-- [ ] **Duplicate account** — same email on another provider, notice modal — 1 MD / AI 0.2
+- [ ] **Duplicate account** `[id dup-account]` — same email on another provider, notice modal — 1 MD / AI 0.2
 ```
 
+- **Give every item an `[id <short-name>]` as you write it.** Without one the key is
+  `<phase>|<name>`, so tidying the wording months later severs everything filed under it —
+  carry-over restarts, `item` finds no history, and the next snapshot banks its closed
+  boxes a second time. Adding an id afterwards recovers none of that; it only stops the
+  next rename from costing the same. This is the one part of an item that is free to get
+  right now and impossible to get right later
+- Ids are short, lowercase and stable. Nobody reads them, so they do not have to read
+  well — they have to stay put while the title changes
 - Estimates go **on the top-level item line only**, never on subitems
 - The section heading total must match the sum of its items. Verify with
   `python3 "$HEY" progress --phases`
-- Keep item names short and unique. **The key is `<phase>|<name>`, so renaming later
-  breaks the link to past snapshots**
 
 ## 3. Estimate
 

@@ -64,10 +64,11 @@ dependencies is not included.
 - [ ] **<item name>** `[id <short-name>]` — <description> — 3 MD / AI 0.4
   - [ ] <subitem>
 
-> `[id ...]` is optional and worth adding **when you write the item**. History is
-> otherwise keyed on the item's name, so rewording a line loses everything recorded
-> against it. An id makes later renames free and lets two items share a title. It does not
-> recover history from before it was added.
+> **Give every item an `[id ...]`, as you write it.** History is otherwise keyed on the
+> item's name, so rewording a line loses everything recorded against it. An id makes later
+> renames free and lets two items share a title. It does not recover history from before
+> it was added — which is the whole reason it belongs on the line from the start, and why
+> `doctor` counts the items still without one.
 
 > Leave one line of reasoning per estimate: what it was compared against, what was
 > assumed, and **what was left out.**

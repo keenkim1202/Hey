@@ -274,8 +274,10 @@ flattering number.
   detected at registration and stored as `base`. When it cannot be resolved, the report says so instead
   of printing zero — a wrong base makes the comparison fail silently, which is how work
   that never left your machine goes unnoticed
-- **Item names are keys.** Past snapshots link through `<phase>|<item name>`, so renaming an
-  item severs carry-over and variance tracking
+- **Item names are keys, so give every item an `[id <short-name>]`.** Past snapshots link
+  through `<phase>|<item name>`, and renaming an item severs carry-over and variance
+  tracking. An id makes later renames free, but recovers nothing from before it was added,
+  so it belongs on the line from the start. `doctor` counts the items still without one
 - **Estimates go on the top-level item line only**, as `N MD / AI M`. A subitem never
   carries an estimate of its own, but it can claim a share of its item's with `[AI n]`,
   for the cases where splitting the estimate evenly across the boxes would lie

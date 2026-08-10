@@ -990,6 +990,18 @@ def main() -> int:
     check("doctor: names the lines that read as waiting but carry no marker",
           "read as waiting but carry no" in out and "Reads as blocked" in out, out)
 
+    # `[id ...]` used to come up only once a rename had already cost something -- a key two
+    # items claim, or a recorded key nothing answers to. Both arrive after the history it
+    # protects is already detached, and adding an id then recovers none of it.
+    check("doctor: counts the items with no `[id ...]` before a rename costs anything",
+          "carry no `[id <name>]`" in out, out)
+    # One line for the whole ledger, and informational: a project with two hundred
+    # un-idded items would otherwise report two hundred warnings about a file that is
+    # working fine, and bury the failures that are not.
+    idline = next((l for l in out.splitlines() if "carry no `[id <name>]`" in l), "")
+    check("doctor: the id notice is informational, not a warning",
+          idline.strip().startswith("info"), idline or out)
+
     # A `[since]` naming a day that has not arrived is a deliberate statement that the wait
     # has not started. The records would happily supply an age -- the item has been sitting
     # in the fixture's snapshots since the first one -- and using it would answer a question

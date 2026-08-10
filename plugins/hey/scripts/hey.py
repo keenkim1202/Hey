@@ -1141,6 +1141,16 @@ def cmd_doctor(args, cfg):
                             f"{', '.join(orphans[:3])}. A renamed, moved or deleted item "
                             f"leaves its history behind -- `[id <name>]` on an item makes "
                             f"its later renames free")
+            # Said before the rename rather than after it. Every message about `[id ...]`
+            # used to arrive as a remedy for damage already done -- a clash, or a key
+            # nothing answers to -- by which point the history it protects is already
+            # detached. One summary line, never one per item: a ledger of two hundred
+            # items would otherwise bury every other thing on this page.
+            unnamed = [i for i in ledger.items if not i["id"]]
+            if unnamed:
+                say("info", f"{len(unnamed)} of {len(ledger.items)} item(s) carry no "
+                            f"`[id <name>]`, so each one's history is tied to its wording. "
+                            f"Adding one now is free; adding it after a rename is too late")
             # Words used to classify an item as blocked on their own. They no longer do, so
             # a ledger written under the old rule would go quiet about its blockers. Named
             # rather than guessed at: `doctor` still reads the words, and says which lines
