@@ -295,12 +295,19 @@ def die(msg: str) -> None:
     sys.exit(2)
 
 
-def die_out_of_scope() -> None:
+def die_out_of_scope(escape: str | None = "scope") -> None:
     """Every entry point fails the same way when the cwd is in no registered project.
 
     Naming the resolved main root matters more than it looks: from inside a linked
     worktree it is not the directory the user is standing in, and it is the path `add`
     wants.
+
+    `escape` names the way out, which is not the same for every command. A report widens
+    to every project. A note has to land in exactly one ledger, so widening is not on
+    offer -- and `note` accepts `--scope` only to ignore it, which makes that advice fail
+    without saying anything. `resolve` answers about one directory or not at all, and has
+    neither flag. Sending a reader to a flag that cannot help is worse than the bare
+    failure, because they spend the next minute believing they mistyped it.
     """
     root = git_root(Path.cwd())
     lines = [f"{root} is not a registered project" if root
@@ -308,7 +315,10 @@ def die_out_of_scope() -> None:
     if root:
         lines.append(f"register:  hey.py add {root} --init")
     lines.append("list:      hey.py projects")
-    lines.append("sweep all: pass `--scope all`")
+    if escape == "scope":
+        lines.append("sweep all: pass `--scope all`")
+    elif escape == "project":
+        lines.append("by name:   pass `--project <name>`")
     die("\n     ".join(lines))
 
 
@@ -1162,7 +1172,9 @@ def cmd_scope(args, cfg):
 def cmd_resolve(args, cfg):
     p = resolve_project(cfg)
     if not p:
-        die("not inside a registered project. Run `hey.py add <path>`")
+        # No escape: `resolve` takes neither `--project` nor `--scope`. It answers about
+        # the directory you are standing in, or it does not answer.
+        die_out_of_scope(escape=None)
     print(json.dumps(p, ensure_ascii=False))
 
 
@@ -1400,7 +1412,8 @@ def cmd_note(args, cfg):
     """Insert a note at the top of the ledger's notes section, under today's date."""
     projs = projects_in_scope(cfg, "current", args.project)
     if not projs:
-        die("not inside a registered project. Pass `--project <name>`")
+        # A note goes into one ledger, so `--scope all` is not a way out of this.
+        die_out_of_scope(escape="project")
     p = projs[0]
     # The note goes wherever the notes heading actually lives. With the halves split, the
     # primary ledger has no such heading, and inserting there would put the note in a file

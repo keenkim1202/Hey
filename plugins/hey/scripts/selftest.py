@@ -931,6 +931,17 @@ def main() -> int:
     # linked worktree is not where you are standing, and is what `add` wants.
     check("scope current: being out of scope says how to get in",
           "hey.py add" in out or "hey.py projects" in out, out)
+
+    # The way out is not the same for every command, and offering the wrong one costs the
+    # reader a minute of believing they mistyped a flag. `note` is the sharp case: it takes
+    # `--scope` and then ignores it, so advising `--scope all` there fails without a word.
+    code, out = run([hey, "note", "from nowhere"], env, tmp)
+    check("out of scope: a note is sent to `--project`, since it lands in one ledger",
+          code == 2 and "--project" in out and "--scope all" not in out, out)
+    # `resolve` has neither flag. An escape hatch it does not have is not an escape hatch.
+    code, out = run([hey, "resolve"], env, tmp)
+    check("out of scope: `resolve` offers neither flag, having neither",
+          code == 2 and "--project" not in out and "--scope all" not in out, out)
     run([hey, "scope", "all"], env, proj)
 
     # Blockers must be detected in whichever language the ledger uses, and only the real
