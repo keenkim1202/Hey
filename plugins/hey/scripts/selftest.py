@@ -961,6 +961,12 @@ def main() -> int:
     # reached it, and a linked worktree outside the project root. All three are states
     # the plugin has to handle and none of them used to be exercised here.
     git("init", "-q", "--bare", str(origin), cwd=tmp)
+    # A bare repo's HEAD follows the machine's `init.defaultBranch`, and this fixture
+    # pushes `main`. Where that default is `master` -- CI, and any git before 2.28 -- HEAD
+    # points at a ref no push ever creates, so cloning this origin produces a repository
+    # with **no HEAD at all**. That is what the `clean` project silently was in CI, passing
+    # every check that only asked whether it was dirty.
+    git("symbolic-ref", "HEAD", "refs/heads/main", cwd=origin)
     git("init", "-q")
     git("symbolic-ref", "HEAD", "refs/heads/main")
     (proj / ".git" / "info").mkdir(parents=True, exist_ok=True)
@@ -1293,9 +1299,12 @@ def main() -> int:
     fixture_head = _sh_out(["git", "rev-parse", "--short", "HEAD"], proj)
     clean_head = _sh_out(["git", "rev-parse", "--short", "HEAD"], clean)
     code, out = run([hey, "note", "filed from elsewhere", "--project", "fixture"], env, clean)
+    # `clean_head` empty would make the negative half vacuously false, so it is asserted
+    # rather than assumed -- a clone with no HEAD is exactly the fixture bug this found.
     check("note: takes branch and commit from the project it files into, not the cwd",
-          code == 0 and fixture_head in out and clean_head not in out,
-          f"fixture={fixture_head} clean={clean_head}\n{out}")
+          code == 0 and clean_head and fixture_head != clean_head
+          and fixture_head in out and clean_head not in out,
+          f"fixture={fixture_head!r} clean={clean_head!r}\n{out}")
     code, out = run([hey, "dirty"], env, proj)
     check("dirty: the clean project really does report the all-clear line",
           "nothing uncommitted or unpushed" in out, out)
