@@ -322,9 +322,13 @@ flattering number.
   of printing zero — a wrong base makes the comparison fail silently, which is how work
   that never left your machine goes unnoticed
 - **Item names are keys, so give every item an `[id <short-name>]`.** Past snapshots link
-  through `<phase>|<item name>`, and renaming an item severs carry-over and variance
-  tracking. An id makes later renames free, but recovers nothing from before it was added,
-  so it belongs on the line from the start. `doctor` counts the items still without one
+  through `<phase>|<item name>`. Renaming an item severs carry-over and variance tracking —
+  and does one thing worse: the renamed item reads as new, so **every box already closed
+  under the old name is banked again as work closed today.** An item three quarters done
+  and reworded adds that three quarters to the day it was reworded on. The ledger holds
+  only its current state, so that day cannot be recalculated afterwards. An id makes later
+  renames free but recovers nothing from before it was added, so it belongs on the line
+  from the start. `doctor` counts the items still without one
 - **Estimates go on the top-level item line only**, as `N MD / AI M`. A subitem never
   carries an estimate of its own, but it can claim a share of its item's with `[AI n]`,
   for the cases where splitting the estimate evenly across the boxes would lie

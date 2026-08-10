@@ -443,8 +443,17 @@ class Ledger:
         self._parse()
 
     def _parse(self) -> None:
-        section, cur = None, None
+        section, cur, fenced = None, None, False
         for ln in self.lines:
+            # A fence is where a ledger quotes markdown at itself, and this tool teaches
+            # the very syntax people paste in. An example checklist row in the notes was
+            # counted as work: one `- [ ] **Example** — 5 MD / AI 2.0` in a fence took a
+            # 1.0 AI-day ledger to 3.0, with nothing on screen to explain the other 2.0.
+            if ln.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
             if ln.startswith("## "):
                 section, cur = ln[3:].strip(), None
                 continue
@@ -1224,7 +1233,9 @@ def cmd_doctor(args, cfg):
             if unnamed:
                 say("info", f"{len(unnamed)} of {len(ledger.items)} item(s) carry no "
                             f"`[id <name>]`, so each one's history is tied to its wording. "
-                            f"Adding one now is free; adding it after a rename is too late")
+                            f"Rewording one banks its already-closed boxes a second time, "
+                            f"on the day of the edit, and that day cannot be recomputed "
+                            f"afterwards. Adding an id now is free; after a rename it is late")
             # Words used to classify an item as blocked on their own. They no longer do, so
             # a ledger written under the old rule would go quiet about its blockers. Named
             # rather than guessed at: `doctor` still reads the words, and says which lines
@@ -1573,9 +1584,17 @@ def cmd_note(args, cfg):
     if not path.exists():
         die(f"ledger not found: {path}")
 
-    cwd = Path.cwd()
-    branch = _sh(["git", "branch", "--show-current"], cwd)
-    head = _sh(["git", "rev-parse", "--short", "HEAD"], cwd)
+    # Read from the project the note is going to, not from wherever the shell happens to
+    # be. With `--project other` those two are different repositories, and the branch and
+    # commit of this one were being written into that one's ledger as if they described it.
+    # Standing inside the project, `cwd` is the more precise answer of the two -- it names
+    # the worktree you are actually in, and the registered root is a different worktree
+    # with a different branch -- so it is preferred only when it belongs to this project.
+    here = Path.cwd()
+    root = Path(p["root"])
+    origin = here if git_root(here) == root else root
+    branch = _sh(["git", "branch", "--show-current"], origin)
+    head = _sh(["git", "rev-parse", "--short", "HEAD"], origin)
     bits = []
     for f in args.file or []:
         bits.append(f"`{f}`")
@@ -2147,7 +2166,12 @@ def main() -> None:
     sp = scoped(add("burndown", cmd_burndown, help="trend of AI-days remaining"))
     sp.add_argument("--days", type=int, default=14)
 
-    sp = scoped(add("note", cmd_note, help="add a note"))
+    # Not `scoped`: a note lands in exactly one ledger, so `--scope all` has nothing to
+    # mean. It used to be accepted here and then ignored by the command, which is worse
+    # than rejecting it -- the flag parsed, changed nothing, and said nothing about having
+    # changed nothing.
+    sp = add("note", cmd_note, help="add a note")
+    sp.add_argument("--project", help="a single project by name")
     sp.add_argument("text")
     sp.add_argument("--file", action="append", help="related file (repeatable)")
     sp.add_argument("--doc", action="append", help="related doc or link (repeatable)")

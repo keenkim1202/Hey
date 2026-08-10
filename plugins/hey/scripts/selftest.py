@@ -411,6 +411,33 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+FENCE_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+import tempfile
+from pathlib import Path
+from hey import Ledger
+
+d = Path(tempfile.mkdtemp())
+p = d / 'TASKS.local.md'
+# This tool teaches the checklist syntax, so quoting it back inside the ledger is the
+# natural thing to do -- and the quoted row used to be counted as work. One example took
+# a 1.0 AI-day ledger to 3.0, with nothing on screen to account for the other 2.0.
+p.write_text('## Notes\\n\\n'
+             '```markdown\\n'
+             '- [ ] **Example item** - how to write one - 5 MD / AI 2.0\\n'
+             '  - [ ] a subitem\\n'
+             '```\\n\\n'
+             '## P0. Real (1 MD / AI 1.0)\\n\\n'
+             '- [ ] **Real item** `[id real]` - the only real one - 1 MD / AI 1.0\\n'
+             '  - [x] a real subitem\\n', encoding='utf-8')
+led = Ledger({{'ledger': str(p), 'root': str(d), 'name': 't'}})
+titles = [i['title'] for i in led.items]
+assert titles == ['Real item'], titles
+g = led.progress()
+assert g['total_ai'] == 1.0, g['total_ai']
+assert g['cb_total'] == 2, g['cb_total']
+"""
+
 ATOMIC_WRITE_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import tempfile
@@ -600,6 +627,12 @@ assert snap.get('baseline', 'MISSING') is None, snap.get('baseline', 'MISSING')
 for key in ('code', 'tokens', 'items'):
     assert key in second, (key, sorted(second))
 """
+
+
+def _sh_out(cmd: list, cwd: Path) -> str:
+    """One git command's stdout, stripped. For assertions that need a real sha."""
+    p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    return p.stdout.strip()
 
 
 def run(cmd: list, env: dict, cwd: Path) -> tuple:
@@ -961,6 +994,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "markdown quoted inside the ledger is not counted as work":
+            FENCE_PROBE.format(here=str(HERE)),
         "an interrupted write leaves the previous file intact":
             ATOMIC_WRITE_PROBE.format(here=str(HERE)),
         "token cost is priced only from rates somebody supplied":
@@ -1143,6 +1178,12 @@ def main() -> int:
     check("import-tasks: a file with no task lines says so rather than printing nothing",
           run([hey, "import-tasks", str(tmp / "TASKS.local.md")], env, proj)[0] == 2, "")
 
+    # A note lands in one ledger, so `--scope all` never meant anything here. It used to
+    # parse and be ignored, which reads as "accepted" to whoever typed it.
+    code, out = run([hey, "note", "x", "--scope", "all"], env, proj)
+    check("note: rejects `--scope` rather than accepting and ignoring it",
+          code != 0 and "unrecognized arguments" in out, out)
+
     code, out = run([hey, "note", "from nowhere"], env, tmp)
     check("out of scope: a note is sent to `--project`, since it lands in one ledger",
           code == 2 and "--project" in out and "--scope all" not in out, out)
@@ -1244,6 +1285,17 @@ def main() -> int:
     (clean / ".git" / "info" / "exclude").write_text("TASKS.local.md\n")
     (clean / "TASKS.local.md").write_text(LEDGER.format(today=today))
     run([hey, "add", str(clean), "--name", "clean"], env, proj)
+
+    # Branch and commit describe the project the note is filed under. Run from a directory
+    # belonging to *another* repository, `--project` used to carry this one's HEAD into
+    # that one's ledger, where nothing marks it as coming from somewhere else. Asserted on
+    # the sha: `clean` is a clone, so it has a HEAD of its own to be wrongly credited.
+    fixture_head = _sh_out(["git", "rev-parse", "--short", "HEAD"], proj)
+    clean_head = _sh_out(["git", "rev-parse", "--short", "HEAD"], clean)
+    code, out = run([hey, "note", "filed from elsewhere", "--project", "fixture"], env, clean)
+    check("note: takes branch and commit from the project it files into, not the cwd",
+          code == 0 and fixture_head in out and clean_head not in out,
+          f"fixture={fixture_head} clean={clean_head}\n{out}")
     code, out = run([hey, "dirty"], env, proj)
     check("dirty: the clean project really does report the all-clear line",
           "nothing uncommitted or unpushed" in out, out)
