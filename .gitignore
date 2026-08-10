@@ -5,8 +5,11 @@ __pycache__/
 # macOS
 .DS_Store
 
-# The ledger is per-user local state and is never committed, including here
+# The ledger is per-user local state and is never committed, including here. A split
+# ledger keeps its prose in a second file -- same rule, and it is the half that holds the
+# working notes, so leaving it out was the more expensive miss of the two.
 TASKS.local.md
+TASKS.log.local.md
 
 # Personal working notes. Never shared, and never a place to put anything the repo needs.
 .claude.local.md
