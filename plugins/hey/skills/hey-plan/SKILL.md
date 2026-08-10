@@ -84,12 +84,24 @@ table of ratios here because a ratio depends on the language, the codebase, the 
 the person, and a number that looks authoritative is worse than an admitted guess: it
 turns speculation into schedule arithmetic that nobody re-examines.
 
-- **With history**: read `hey.py variance` for items of the same kind already finished, ask
-  what share of each span was hands-on, and estimate from that. Write the factor and the
-  items you drew it from into the ledger's estimate basis.
-- **Without history**: say plainly that the first estimates are guesses, keep them coarse,
-  and revisit after the first few items close. **Do not invent a multiplier to look
-  precise.**
+- **With history**: read `hey.py variance`. Its second block compares each recorded day's
+  closed AI against the span of that day's own commits — a ratio above 1 means that day's
+  estimates claimed more hours than the day held. Correct by roughly that much, and write
+  the factor and where you got it into the ledger's estimate basis.
+- **Without history, estimate `AI` directly, in hours, and do not derive it from `MD`.**
+  Say "this is about two hours" and divide by eight. Guessing a duration is a guess the
+  first day's commit span can check; guessing a ratio to divide `MD` by is a guess with
+  nothing to check it against, and it hides inside a number that looks calculated. Write
+  `MD` down as its own honest figure — what this would have cost without tooling — and
+  keep it out of the arithmetic that produces `AI`.
+- Either way, **say plainly that early estimates are guesses**, keep them coarse, and
+  revisit after the first day recorded. **Do not invent a multiplier to look precise.**
+
+> A worked failure, from this repository on 2026-08-10. Multipliers of ÷4 to ÷6 were
+> assumed off "typical values" — exactly what the paragraph above forbids — and eleven
+> items were estimated through them. The first day measured said the day's estimates had
+> claimed 11.8 hours against a commit span of 4h 30m: **2.6x too high**, discovered only
+> because someone noticed the ledger declaring a full day at three in the afternoon.
 
 ```
 StoreKit 2 = 5 MD code @4x + 3 MD console and sandbox @1x = 8 MD / AI 4.25

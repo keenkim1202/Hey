@@ -161,6 +161,32 @@ def day_range(on: str) -> list[str]:
     return [f"--since={on} 00:00:00", f"--until={on} 23:59:59"]
 
 
+def commit_span(root: Path, on: str, author: str | None) -> tuple | None:
+    """First and last commit of one day, across every worktree, and the minutes between.
+
+    **A floor, and a coarse one.** It cannot see the hour spent before the first commit,
+    and it counts lunch and meetings as though they were work. What it is good for is the
+    order of magnitude: a day whose commits span two hours did not hold the eight the
+    ledger was told it did, and no amount of caveat makes those two numbers agree.
+    """
+    seen: dict = {}
+    for w in worktree_roots(root):
+        cmd = ["git", "log", "--all", "--no-merges", *day_range(on),
+               "--date=format:%H:%M", "--format=%cd %h"]
+        if author:
+            cmd.insert(2, f"--author={author}")
+        for ln in _sh(cmd, w).split("\n"):
+            parts = ln.split(" ", 1)
+            if len(parts) == 2 and ":" in parts[0]:
+                seen[parts[1]] = parts[0]
+    if len(seen) < 2:
+        return None
+    stamps = sorted(seen.values())
+    lo, hi = stamps[0], stamps[-1]
+    mins = (int(hi[:2]) * 60 + int(hi[3:])) - (int(lo[:2]) * 60 + int(lo[3:]))
+    return lo, hi, mins
+
+
 def worktree_roots(root: Path) -> list[Path]:
     """Every worktree of a repository, the main one first.
 
@@ -1402,16 +1428,43 @@ def cmd_variance(args, cfg):
                     first_wip.pop(k, None)
         if not results:
             print(f"[{p['name']}] no item has been seen closing yet, so there is nothing to "
-                  f"measure. Items already complete in the first record are excluded")
-            continue
-        print(f"[{p['name']}] estimate vs elapsed, per item ({len(results)} measured)")
-        for k, (ai, wd) in results.items():
-            print(f"  {k:44} est AI {ai:5} -> {wd} business day(s) elapsed")
-        print("  elapsed from when the item was first seen started -- or first seen at "
-              "all, if it\n  never passed through in-progress -- to when it was first "
-              "seen closed. Not effort:\n  an item waits for review, shares its days "
-              "with other items and pauses on blockers.\n  Read these one at a time and "
-              "ask what share of each span went to the item")
+                  f"measure per item. Items already complete in the first record are excluded")
+        else:
+            print(f"[{p['name']}] estimate vs elapsed, per item ({len(results)} measured)")
+            for k, (ai, wd) in results.items():
+                print(f"  {k:44} est AI {ai:5} -> {wd} business day(s) elapsed")
+            print("  elapsed from when the item was first seen started -- or first seen at "
+                  "all, if it\n  never passed through in-progress -- to when it was first "
+                  "seen closed. Not effort:\n  an item waits for review, shares its days "
+                  "with other items and pauses on blockers.\n  Read these one at a time and "
+                  "ask what share of each span went to the item")
+
+        # Day level, and deliberately not the per-item mean this command used to print.
+        # That averaged elapsed *days*, each confounded by review, parallelism and late
+        # ticking, and folded all of it into something shaped like calibration. This asks a
+        # narrower question with far less in the way: on one day, how many hours did the
+        # ledger claim were closed, and how long did that same day's commits actually run?
+        # Same day, same person, no waiting in between. It is still a floor -- see
+        # `commit_span` -- and the caveat is printed rather than left to the reader.
+        author = (args.author or cfg.get("author")
+                  or _sh(["git", "config", "user.email"], Path(p["root"])))
+        spans = []
+        for r in [r for r in rows if r.get("earned_ai")][-args.days:]:
+            sp = commit_span(Path(p["root"]), r["date"], author)
+            if sp:
+                spans.append((r["date"], r["earned_ai"], sp))
+        if spans:
+            print(f"  [{p['name']}] closed work against the span of that day's commits")
+            for on, ai, (lo, hi, mins) in spans:
+                claimed_h = ai * 8
+                ratio = f"{claimed_h * 60 / mins:.1f}x" if mins else "-"
+                print(f"    {fmt_date(on)}  closed AI {ai} (= {claimed_h:.1f}h claimed)"
+                      f"  commits {lo}-{hi} ({mins // 60}h {mins % 60:02d}m)  {ratio}")
+            print("  a ratio above 1 means the day's estimates claimed more hours than the "
+                  "day\n  visibly held. The span is a floor -- it cannot see the work before "
+                  "the first\n  commit, and it counts lunch as work -- so read the order of "
+                  "magnitude, not\n  the digit. This is for correcting estimates. It is not "
+                  "a record of hours worked")
 
 
 def cmd_burndown(args, cfg):
@@ -1958,7 +2011,10 @@ def main() -> None:
                     help="threshold: calendar days for blocker age, consecutive recorded "
                          "snapshots for carried-over items. The two are not the same unit "
                          "-- a run of snapshots ignores the gaps between them")
-    scoped(add("variance", cmd_variance, help="estimate vs actual"))
+    sp = scoped(add("variance", cmd_variance, help="estimate vs actual"))
+    sp.add_argument("--days", type=int, default=7,
+                    help="how many recorded days to compare against their commit span")
+    sp.add_argument("--author", help="defaults to the repository's `user.email`")
     sp = scoped(add("burndown", cmd_burndown, help="trend of AI-days remaining"))
     sp.add_argument("--days", type=int, default=14)
 

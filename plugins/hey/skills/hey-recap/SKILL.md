@@ -75,11 +75,22 @@ rename rather than fresh work.
 P0|codegen pipeline        est AI 0.4 -> 8 business day(s) open
 ```
 
-**Elapsed, not effort. There is no multiplier and you may not compute one.** The days
-counted are days the item was open, and in them it waited for review, ran alongside other
-items and paused on blockers. Averaging those ratios would fold all of that into a number
-that looks like calibration. Take them **one at a time** and ask what share of the span
-actually went to the item — that answer is the user's, not yours.
+**Elapsed, not effort. Never average these rows into a multiplier.** The days counted are
+days the item was open, and in them it waited for review, ran alongside other items and
+paused on blockers. Averaging those ratios would fold all of that into a number that looks
+like calibration. Take them **one at a time** and ask what share of the span actually went
+to the item — that answer is the user's, not yours.
+
+`variance` then prints a second block: each recorded day's closed AI against the span of
+that same day's commits. **That one is a real signal and you may report it.** It is not
+the average forbidden above — nothing waits between a day's first and last commit the way
+review and parallelism sit inside an item's open span. A ratio well above 1 means the
+estimates on that day claimed more hours than the day visibly held.
+
+Report it as the script frames it, with both caveats intact: the span is a **floor**, and
+it is **not a record of hours worked**. Never present it as how long someone worked, never
+compare one person's against another's, and never carry it into a standup. It exists to
+correct estimates, and it earns its place only while it is used for that.
 
 Variance only measures items **seen unfinished before they closed.** Anything already
 complete when recording began is excluded, so early on this list is short or empty. That is
@@ -133,7 +144,9 @@ The card carries the same five sections. **Never introduce a number that is not 
 
 - Never edit the ledger. A recap is read-only
 - Never state a trend when snapshots are too few, and never divide a runway out of the burndown
-- Never average the variance rows into a multiplier. They are elapsed days, not effort
+- Never average the per-item variance rows into a multiplier. They are elapsed days, not
+  effort. The day-versus-commit-span block below them is the one calibration figure here
+- Never read the commit span as hours worked, or compare one person's against another's
 - Never invent an accomplishment the log does not show
 - Never soften a bad metric by pivoting to a better one. If closed work is 0, say 0
 - Never build an Artifact unless asked

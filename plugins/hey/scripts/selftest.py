@@ -411,6 +411,27 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+COMMIT_SPAN_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+from datetime import date
+from pathlib import Path
+from hey import commit_span
+
+proj = Path({proj!r})
+# The fixture commits several times while it is being built, so today has a span.
+sp = commit_span(proj, date.today().isoformat(), None)
+assert sp is not None, 'a day with several commits produced no span'
+lo, hi, mins = sp
+assert lo <= hi, sp
+assert mins >= 0, sp
+# One commit cannot span anything, and neither can none. Returning `(t, t, 0)` there would
+# read as a day that held zero minutes, which is a different claim from having no measure.
+assert commit_span(proj, '2001-01-01', None) is None, 'a day with no commits spanned'
+# An author nobody committed under has no commits, so it has no span either -- rather
+# than the whole day's span credited to them.
+assert commit_span(proj, date.today().isoformat(), 'nobody@example.com') is None
+"""
+
 TOKEN_SCOPE_PROBE = """
 import json, os, sys; sys.path.insert(0, {here!r})
 from datetime import datetime, timezone
@@ -815,6 +836,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "a day's commit span is a measure, and its absence is not zero":
+            COMMIT_SPAN_PROBE.format(here=str(HERE), proj=str(proj)),
         "tokens are charged to a project by path, not by string prefix":
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
     }

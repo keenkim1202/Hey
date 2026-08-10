@@ -228,9 +228,24 @@ reports what share of it sits at 1x.
 
 **There is no table of code multipliers, deliberately.** A ratio depends on the language,
 the codebase, the model and the person, and one printed here would be a number nobody
-measured being read as one somebody did. Derive it from your own finished items — `hey.py
-variance` shows how long each took — and until you have a few, say the estimates are
-guesses.
+measured being read as one somebody did.
+
+So until you have measured one, **estimate `AI` directly in hours** rather than dividing
+`MD` by a ratio you guessed. "About two hours" is a guess the same evening can check;
+"a man-day over four" is a guess with nothing to check it against, wearing the clothes of
+a calculation.
+
+`hey.py variance` is what checks it. Under the per-item rows it puts each recorded day's
+closed AI beside the span of that day's own commits:
+
+```
+2026-08-10 (Mon)  closed AI 1.47 (= 11.8h claimed)  commits 10:38-15:08 (4h 30m)  2.6x
+```
+
+Above 1 means that day's estimates claimed more hours than the day visibly held. The span
+is a floor — it cannot see the work before the first commit, and it counts lunch as work —
+so it is read for its order of magnitude. **It is a calibration figure, not a record of
+hours worked**, and nothing in hey compares it between people or carries it to a standup.
 
 ---
 
