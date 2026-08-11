@@ -866,6 +866,64 @@ def version_checks() -> list:
     return out
 
 
+def banned_phrases() -> list:
+    """The phrases `hey-wording` forbids, read out of that file rather than copied here.
+
+    A second list kept in this script would drift from the rule it enforces the first time
+    somebody edits one of them, which is the failure this whole family of checks exists to
+    catch. So the rule stays in one place and the check reads it.
+
+    Bullets whose explanation says `consecutive` are skipped: `또한` in one sentence is
+    ordinary Korean and only the repetition is a tell, which a substring test cannot see.
+    A check that cries wolf is a check nobody reads.
+    """
+    src = HERE.parent / "skills" / "hey-wording" / "SKILL.md"
+    if not src.exists():
+        return []
+    text = src.read_text(encoding="utf-8")
+    try:
+        start = text.index("**Words to drop.**")
+        end = text.index("**Words to use.**", start)
+    except ValueError:
+        return []
+    out = []
+    for line in text[start:end].splitlines():
+        if not line.lstrip().startswith("-"):
+            continue
+        prose = re.sub(r"`[^`]+`", "", line)
+        if "consecutive" in prose:
+            continue
+        out += [t.lstrip("~") for t in re.findall(r"`([^`]+)`", line)]
+    return out
+
+
+def wording_checks() -> list:
+    """No skill may contain a phrase `hey-wording` tells the model never to write.
+
+    The rules live in one file and the violations land in another -- `hey-run` was teaching
+    a box percentage the product rejects, and nothing connected the two until a reviewer
+    read both. Examples in a skill are templates: whatever they show is what gets written.
+
+    `hey-wording` itself is exempt, since listing the phrases is its job.
+    """
+    plugin = HERE.parent
+    phrases = banned_phrases()
+    if not phrases:
+        return [("hey-wording has no parseable `Words to drop` list, so nothing is "
+                 "enforced", "")]
+    out = []
+    docs = sorted(plugin.glob("skills/*/SKILL.md")) + sorted(plugin.glob("commands/*.md"))
+    for path in docs:
+        if path.parent.name == "hey-wording":
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for phrase in phrases:
+                if phrase in line:
+                    out.append((f"{path.relative_to(plugin)}:{n} writes `{phrase}`, which "
+                                f"`hey-wording` forbids", line.strip()[:120]))
+    return out
+
+
 def scoped_hits(text: str) -> list:
     """Removed-feature terms `text` asserts, ignoring the sentences that deny them.
 
@@ -1180,7 +1238,8 @@ def main() -> int:
                          ("language packs agree", string_pack_checks),
                          ("docs claim no removed feature", removed_feature_checks),
                          ("every read and write names its encoding", encoding_checks),
-                         ("the pinned version has a changelog entry", version_checks)):
+                         ("the pinned version has a changelog entry", version_checks),
+                         ("no skill writes what the wording rules forbid", wording_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)
