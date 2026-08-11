@@ -411,6 +411,45 @@ for want in (str(hey.CARD_MIN), str(hey.CARD_W)):
     assert seen > 20, (want, seen)
 """
 
+LATE_TICK_PROBE = """
+import sys; sys.path.insert(0, {here!r})
+import os, tempfile
+from pathlib import Path
+import hey, board
+
+# `/seeya` used to stop halfway and ask the user to go run `/hey-sync` first, on the
+# grounds that a box ticked after `collect` "does not backfill into" the day. It does.
+# `collect` recomputes today against the previous *record*, so a re-run picks it up -- and
+# the day the claim was written into the skill, nothing tested it.
+d = Path(tempfile.mkdtemp())
+led = d / 'TASKS.local.md'
+proj = {{'ledger': str(led), 'root': str(d), 'name': 't'}}
+
+def write(a, b):
+    led.write_text('## P0. Phase (2 MD / AI 2.0)\\n\\n'
+                   f'- [{{a}}] **One** `[id one]` - x - 1 MD / AI 1.0\\n'
+                   f'- [{{b}}] **Two** `[id two]` - y - 1 MD / AI 1.0\\n', encoding='utf-8')
+
+def closed(on):
+    snap = hey.record_progress(hey.Ledger(proj), on)
+    hey.merge_stats(on, 't', snap)
+    return snap.get('earned_ai')
+
+os.environ['HEY_HOME'] = str(d / 'home')
+hey.HOME = d / 'home'
+hey.STATS = hey.HOME / 'stats.jsonl'
+
+write(' ', ' ')
+closed('2026-08-09')                      # baseline, no closed figure
+assert closed('2026-08-10') == 0.0
+write('x', ' ')
+assert closed('2026-08-10') == 1.0, 'a late tick did not reach the day it was ticked on'
+write('x', 'x')
+assert closed('2026-08-10') == 2.0
+# And the real constraint still holds: an earlier day cannot be restated.
+assert hey.records_after('t', '2026-08-09'), 'the backdating guard lost its input'
+"""
+
 FENCE_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import tempfile
@@ -1035,6 +1074,8 @@ def main() -> int:
             ITEM_ID_PROBE.format(here=str(HERE)),
         "the zero note only fires when it has something to explain":
             ZERO_NOTE_PROBE.format(here=str(HERE)),
+        "a box ticked after collect still lands on that day":
+            LATE_TICK_PROBE.format(here=str(HERE)),
         "markdown quoted inside the ledger is not counted as work":
             FENCE_PROBE.format(here=str(HERE)),
         "an interrupted write leaves the previous file intact":

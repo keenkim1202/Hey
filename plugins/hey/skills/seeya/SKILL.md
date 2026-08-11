@@ -59,9 +59,13 @@ Today's notes are evidence too. Processed notes become results; unprocessed ones
 carry-overs. A note is not a log entry by itself.
 
 Checking boxes and recomputing totals is **not this skill's job — hand that to
-`/hey-sync`**. But `collect` reads box state, and it runs in the next step, so **if items
-closed today, ask about `/hey-sync` now.** Afterwards the day is recorded and a late box
-does not backfill into it.
+`/hey-sync`**. `collect` reads box state, so a box ticked after it runs is not in the
+figure it just printed — but that is a re-run, not a lost day. `collect` recomputes today
+against the previous **record**, so running it again after a late tick simply corrects the
+number. Say that if it comes up. **Do not stop and ask** — the user typed one command.
+
+The constraint that is real sits a day earlier: box state cannot be written to a date
+before an existing record, and `collect` and `snapshot` both refuse. Today stays open.
 
 ## 2. Record the output
 
