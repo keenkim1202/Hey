@@ -393,13 +393,22 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     has_up = bool(up) and up != "@{upstream}"
     if not has_remote(worktree):
         return 0, has_up
-    # The squash-merge exemption belongs to a branch that never reached a remote: its
-    # commits are gone the day it is deleted, but its content is already in the base, so
-    # nagging about it is a false alarm. A **tracked** branch is a different case. Commits
-    # sitting past its upstream are history no remote holds, and suppressing them because
-    # the net tree happens to match the base -- an add and its revert, an empty commit --
-    # hands back the all-clear this function exists to withhold.
-    if not has_up and already_merged(worktree, base):
+    # The exemption is about content a **remote** already holds, and nothing else. Losable
+    # means no remote has it: where the base is a remote ref and the trees match, deleting
+    # this branch loses commits but no work, which is the squash-merge case and is not
+    # worth a warning.
+    #
+    # The base being local is what makes the difference. Content sitting in a local branch
+    # says nothing about any remote, so suppressing there hands back an all-clear over work
+    # that exists in one place -- which is how a base resolving locally turned every commit
+    # on it into zero.
+    #
+    # An upstream cannot stand in for this test. `switch -c feature --track origin/main`
+    # gives a branch an upstream it has never been pushed to, so keying on that reported
+    # the rewritten commits of a squash-merged branch as work at risk. Tracking is
+    # configuration; containment is a fact.
+    ref = base_ref(worktree, base)
+    if ref and ref.startswith("origin/") and already_merged(worktree, base):
         return 0, has_up
     out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
     return len([ln for ln in out.split("\n") if ln.strip()]), has_up

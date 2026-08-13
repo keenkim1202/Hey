@@ -850,19 +850,46 @@ assert 'nothing uncommitted or unpushed' not in rep, rep
 # commit, and reading that as "already merged" is what zeroed the count.
 assert hey.already_merged(local, 'integration') is False
 
-# Nor is an add and its revert on a **tracked** branch. The net tree matches the base, but
-# those commits are history no remote holds, and the squash-merge exemption is for a branch
-# that never reached a remote in the first place.
-git('checkout', '-q', '-b', 'tracked')
-git('push', '-q', '-u', 'origin', 'tracked')
+# An upstream is not proof of a push, and cannot stand in for one. `--track` sets tracking
+# configuration on a branch that has never left the machine, so a squash-merged branch of
+# that shape looks tracked, is not contained anywhere, and had its rewritten commits
+# reported as work at risk -- the exact false alarm the exemption exists to prevent.
+# Containment is the axis, not tracking: the base here is a remote ref, so the content is
+# somewhere safe and only the commits are gone.
+git('checkout', '-q', 'main')
+git('push', '-q', '-u', 'origin', 'main')
+git('switch', '-q', '-c', 'tracked', '--track', 'origin/main')
 (local / 'e.txt').write_text('e')
 git('add', '-A')
-git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add e')
-(local / 'e.txt').unlink()
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work on a tracked branch')
+git('switch', '-q', 'main')
+git('merge', '-q', '--squash', 'tracked')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'squashed onto main')
+git('push', '-q', 'origin', 'main')
+git('switch', '-q', 'tracked')
+
+assert hey.unpushed(local, 'main')[1] is True, 'the branch has an upstream'
+assert hey.base_ref(local, 'main') == 'origin/main', hey.base_ref(local, 'main')
+assert hey.already_merged(local, 'main') is True, 'the content is in origin/main'
+assert hey.unpushed(local, 'main')[0] == 0, hey.unpushed(local, 'main')
+
+# The mirror image, and the reason the test is containment rather than "the trees match":
+# a base that lives only on this machine certifies nothing. Work whose net tree equals a
+# local branch is still work no remote has, and exempting it there is the all-clear that
+# started this -- so the same shape that is silent against `origin/main` above must not be
+# silent against a local `integration`.
+git('switch', '-q', 'integration')
+git('switch', '-q', '-c', 'sidework')
+(local / 'f.txt').write_text('f')
 git('add', '-A')
-git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'revert e')
-assert hey.already_merged(local, 'tracked') is True, 'the net tree does match'
-assert hey.unpushed(local, 'tracked') == (2, True), hey.unpushed(local, 'tracked')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add f')
+(local / 'f.txt').unlink()
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'revert f')
+
+assert hey.base_ref(local, 'integration') == 'integration', hey.base_ref(local, 'integration')
+assert hey.already_merged(local, 'integration') is True, 'the net tree does match'
+assert hey.unpushed(local, 'integration')[0] > 0, hey.unpushed(local, 'integration')
 git('checkout', '-q', 'feature')
 
 # With a remote in play, a branch that has never reached it is work at risk again -- the
