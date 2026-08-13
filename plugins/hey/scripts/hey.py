@@ -237,7 +237,12 @@ def has_remote(root: Path) -> bool:
     the measure does not apply. Reporting it as a fault asks the user to fix something that
     is not broken, and the fix on offer, naming a base branch, cannot change it.
     """
-    return bool(_sh(["git", "remote"], root).strip())
+    return bool(remotes(root))
+
+
+def remotes(root: Path) -> list:
+    """Every remote this repository has, in the order git lists them."""
+    return [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
 
 
 def repos_below(root: Path, depth: int = 2) -> list:
@@ -277,13 +282,30 @@ def base_ref(root: Path, base: str | None) -> str | None:
 
     The remote copy wins where both exist. It is what the rest of the world has agreed on,
     and a local branch can sit behind it without anyone noticing.
+
+    **Every remote, not just `origin`.** Looking only there made the base of a repository
+    that calls its remote `upstream` resolve locally, and each thing downstream then had to
+    guess whether that meant "no remote has this" -- three separate attempts, each fixing
+    the previous one's blind spot, all of them compensating here. A remote is whatever the
+    repository says it is.
+
+    **A returned name says which it found**: `<remote>/<base>` for a remote copy, the bare
+    `<base>` for a local branch. That is the only thing callers need to know whether a
+    remote holds this, so none of them has to ask by name.
     """
     if not base:
         return None
-    for ref, rev in ((f"refs/remotes/origin/{base}", f"origin/{base}"),
-                     (f"refs/heads/{base}", base)):
-        if _sh(["git", "rev-parse", "--verify", "--quiet", ref], root):
-            return rev
+    # `origin` first among remotes when it exists, since that is the one a repository with
+    # several means by default. Local last: a branch here can sit behind its remote copy
+    # without anyone noticing, so the copy wins wherever both exist.
+    names = remotes(root)
+    order = [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
+    for rem in order:
+        if _sh(["git", "rev-parse", "--verify", "--quiet",
+                f"refs/remotes/{rem}/{base}"], root):
+            return f"{rem}/{base}"
+    if _sh(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{base}"], root):
+        return base
     return None
 
 
@@ -303,14 +325,17 @@ def default_base(root: Path) -> str | None:
         return ref[len("origin/"):]
     # Every remote candidate before any local one. Asking `base_ref` per candidate mixes
     # the two tiers: it answers "remote or local `main`" before anything has looked for
-    # `origin/develop`, so a repository integrating on a remote `develop` while keeping a
-    # stale local `main` silently starts counting against the wrong branch. Remote-first
-    # is what the docstring promises, and it has to be a pass, not a preference inside a
-    # per-candidate lookup.
-    for prefix in ("refs/remotes/origin/", "refs/heads/"):
-        for cand in ("main", "develop", "master"):
-            if _sh(["git", "rev-parse", "--verify", "--quiet", prefix + cand], root):
-                return cand
+    # `develop` on the remote, so a repository integrating on a remote `develop` while
+    # keeping a stale local `main` silently starts counting against the wrong branch.
+    # Remote-first is what the docstring promises, and it has to be a pass, not a
+    # preference inside a per-candidate lookup.
+    for cand in ("main", "develop", "master"):
+        got = base_ref(root, cand)
+        if got and got != cand:
+            return cand
+    for cand in ("main", "develop", "master"):
+        if base_ref(root, cand):
+            return cand
     return None
 
 
@@ -407,13 +432,13 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     # gives a branch an upstream it has never been pushed to, so keying on that reported
     # the rewritten commits of a squash-merged branch as work at risk. Tracking is
     # configuration; containment is a fact.
-    # Asked of the base commit itself: is some remote holding it? A ref named `origin/...`
-    # was a stand-in for that, and it fails the moment a repository calls its remote
-    # `upstream` -- the base then resolves locally, the exemption is refused, and a
-    # squash-merged branch is warned about again. Nothing here needs the remote's name.
+    # `base_ref` answers this now: it returns `<remote>/<base>` when a remote holds the
+    # base and the bare `<base>` when only this machine does. Three earlier attempts asked
+    # it some other way -- whether the branch had an upstream, whether the ref began with
+    # `origin/`, whether any remote contained that commit -- and each was a guess standing
+    # in for a fact the lookup already knew but was throwing away.
     ref = base_ref(worktree, base)
-    if ref and _sh(["git", "branch", "-r", "--contains", ref], worktree) \
-            and already_merged(worktree, base):
+    if ref and ref != base and already_merged(worktree, base):
         return 0, has_up
     out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
     return len([ln for ln in out.split("\n") if ln.strip()]), has_up

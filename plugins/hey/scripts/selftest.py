@@ -893,10 +893,10 @@ assert hey.unpushed(local, 'integration')[0] > 0, hey.unpushed(local, 'integrati
 git('checkout', '-q', 'feature')
 
 # And none of it may depend on the remote being called `origin`. A repository whose only
-# remote is `upstream` resolves its base locally, and a containment test written as a name
-# prefix refuses the exemption there -- warning about a squash-merged branch again, for no
-# reason but the name someone chose. The question is whether a remote holds the base, and
-# `branch -r --contains` asks exactly that.
+# remote is `upstream` used to resolve its base locally, and everything downstream then had
+# to guess whether that meant no remote held it -- three attempts at that guess, each
+# fixing the last one's blind spot. `base_ref` looks at every remote now, so the base
+# resolves to `upstream/main` and the guessing has nothing left to do.
 far = d / 'far'
 far.mkdir()
 git('init', '-q', '-b', 'main', '.', cwd=far)
@@ -916,9 +916,21 @@ git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'squashed', cw
 git('push', '-q', 'upstream', 'main', cwd=far)
 git('switch', '-q', 'work', cwd=far)
 
-assert hey._sh(['git', 'remote'], far) == 'upstream', hey._sh(['git', 'remote'], far)
-assert hey.base_ref(far, 'main') == 'main', hey.base_ref(far, 'main')
+assert hey.remotes(far) == ['upstream'], hey.remotes(far)
+assert hey.base_ref(far, 'main') == 'upstream/main', hey.base_ref(far, 'main')
+assert hey.default_base(far) == 'main', hey.default_base(far)
 assert hey.already_merged(far, 'main') is True, 'the content is on upstream'
+assert hey.unpushed(far, 'main')[0] == 0, hey.unpushed(far, 'main')
+
+# The same repository once its local base is rewritten while keeping the remote's tree --
+# an amend, or a rebase that changed nothing. The base still resolves to the remote copy,
+# so the exemption holds. A test phrased as "does any remote contain this commit" answered
+# no here, because the local base no longer shares the remote's history.
+git('switch', '-q', 'main', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--amend', '--no-edit',
+    cwd=far)
+git('switch', '-q', 'work', cwd=far)
+assert hey.base_ref(far, 'main') == 'upstream/main', hey.base_ref(far, 'main')
 assert hey.unpushed(far, 'main')[0] == 0, hey.unpushed(far, 'main')
 
 # With a remote in play, a branch that has never reached it is work at risk again -- the
