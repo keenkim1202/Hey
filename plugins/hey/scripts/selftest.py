@@ -945,6 +945,22 @@ mkt2 = d / 'elsewhere'
     {{'name': 'not-here', 'description': 'same name, different author, different thing'}},
 ]}}), encoding='utf-8')
 
+# Two plugins in one marketplace, each exporting a skill of the same name. They are distinct
+# capabilities, and a key without the owning plugin keeps whichever sorted first -- which
+# does not merely mis-attribute the loser, it makes it unnameable, since this list is the
+# bound on what may be suggested at all.
+twin = mkt / 'other'
+(twin / '.claude-plugin').mkdir(parents=True)
+(twin / '.claude-plugin' / 'plugin.json').write_text('{{}}', encoding='utf-8')
+(twin / 'skills' / 'folded').mkdir(parents=True)
+(twin / 'skills' / 'folded' / 'SKILL.md').write_text(
+    '---' + chr(10) + 'name: folded' + chr(10) + 'description: a different deploy skill'
+    + chr(10) + '---' + chr(10), encoding='utf-8')
+
+owners = sorted(p_ for k, n, p_, m, _ in hey.catalogue(None)
+                if n == 'folded' and m == 'somewhere')
+assert owners == ['not-here', 'other'], owners
+
 both = [(m, v) for k, n, p_, m, v in hey.catalogue(None) if n == 'not-here']
 assert sorted(m for m, _ in both) == ['elsewhere', 'somewhere'], both
 assert {{v for m, v in both if m == 'elsewhere'}} == {{'same name, different author, different thing'}}
@@ -1630,6 +1646,11 @@ def main() -> int:
          "[blocked] Marked elsewhere"),
         ([hey, "open-items"], "open-items: a closed item is not part of the plan",
          "10 open item(s)"),
+        # An item that puts its real work in subitems was arriving as a title and a total.
+        # This command is handed over as the whole plan, so the words that name the actual
+        # framework or service have to come with it.
+        ([hey, "open-items"], "open-items: an item's unfinished subitems come with it",
+         "    - part three"),
         ([hey, "context", "--date", today], "context"),
         ([board, "collect", "--date", yesterday], "collect (yesterday)", "baseline"),
         ([board, "collect", "--date", today], "collect (today)"),
@@ -2066,6 +2087,13 @@ def main() -> int:
     # remote ref asserted that `origin/trunk` had been found when nothing had looked. The
     # kept value is still reported -- saying "unresolved" would contradict the file this
     # command just wrote -- with what can read it said separately.
+    # Closed subitems stay out: they are not what is ahead, and a plan padded with finished
+    # work reads as bigger than it is. A negative, so it cannot ride in the `cases` list.
+    _, kids_out = run([hey, "open-items"], env, proj)
+    check("open-items: a closed subitem is not what is ahead",
+          "part three" in kids_out and "part one" not in kids_out
+          and "part two" not in kids_out, kids_out)
+
     check("add: a re-add with no --base reports the base it kept, not `unresolved`",
           code == 0 and "trunk  (kept)" in out and "unresolved" not in out, out)
     check("add: a kept base on a non-repository says nothing reads it",

@@ -569,6 +569,12 @@ class Ledger:
                     "text": m[2],
                     "done": m[1].lower() == "x",
                     "kids": [],
+                    # Kept alongside the box state, because a subitem's words are the only
+                    # place the concrete work is written down. The parent line names the
+                    # deliverable; `Cloud Functions trigger` and `Firestore rules` live
+                    # underneath it, and anything reading the plan without them is reading
+                    # half a plan.
+                    "kid_text": [],
                     "kid_ai": [],
                     "id": (self.ID.search(m[2]) or [None, None])[1],
                     "branches": self.BRANCH.findall(m[2]),
@@ -585,6 +591,7 @@ class Ledger:
                 if cur is None:
                     continue
                 cur["kids"].append(k[1].lower() == "x")
+                cur["kid_text"].append(k[2])
                 w = self.KID_AI.search(k[2])
                 cur["kid_ai"].append(float(w[1]) if w else None)
                 # A subitem is usually the thing that becomes one branch and one PR, so
@@ -2310,6 +2317,14 @@ def cmd_open_items(args, cfg):
             mark = " [blocked]" if led.key(it) in blocked else ""
             text = Ledger.MARKERS.sub("", it["text"]).replace("**", "").strip()
             print(f"  {it['phase']}{mark} {text}")
+            # Open subitems, under their parent. This command is handed over as the whole
+            # plan, and an item that puts its real work in children -- the framework, the
+            # service, the kind of testing -- was arriving as a title and a total with the
+            # substance stripped out. Closed ones stay out: they are not what is ahead.
+            for done, kid in zip(it["kids"], it["kid_text"]):
+                if not done:
+                    kid = Ledger.MARKERS.sub("", kid).replace("**", "").strip()
+                    print(f"    - {kid}")
 
 
 PLUGIN_ROW = re.compile(r"^\s*❯\s*([\w.-]+)@([\w.-]+)")
@@ -2450,8 +2465,8 @@ def catalogue(have) -> list:
     # loser is not merely mis-attributed, it becomes unnameable.
     seen, uniq = set(), []
     for row in out:
-        if row[:2] + row[3:4] not in seen:
-            seen.add(row[:2] + row[3:4])
+        if row[:4] not in seen:
+            seen.add(row[:4])
             uniq.append(row)
     return uniq
 
