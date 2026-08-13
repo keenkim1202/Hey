@@ -684,6 +684,10 @@ git('init', '-q', '-b', 'main', '.')
 (local / 'a.txt').write_text('hi')
 git('add', '-A')
 git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first')
+# A real one, so `origin` can be pushed to later. Adding a remote that points at nothing is
+# enough to answer "is there a remote", and every check up to here only needs that -- but a
+# branch that has actually reached a remote is a different state, and it cannot be faked.
+git('init', '-q', '--bare', str(d / 'bare'), cwd=d)
 
 for p in (nogit, local):
     (p / 'TASKS.local.md').write_text('# ledger' + chr(10) + chr(10) + '## P0. Phase (0 MD / AI 0)'
@@ -795,6 +799,22 @@ git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=o
 (odd / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
 
 assert hey.default_base(odd) is None, hey.default_base(odd)
+
+# Every remote candidate before any local one. Asking per candidate mixed the tiers, so a
+# repository integrating on a remote `develop` while keeping a stale local `main` answered
+# `main` -- and then counted every report against a branch nobody merges into.
+tier = d / 'tier'
+tier.mkdir()
+git('init', '-q', '-b', 'main', '.', cwd=tier)
+(tier / 'a.txt').write_text('a')
+git('add', '-A', cwd=tier)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=tier)
+git('init', '-q', '--bare', str(d / 'tier-bare'), cwd=tier)
+git('remote', 'add', 'origin', str(d / 'tier-bare'), cwd=tier)
+git('checkout', '-q', '-b', 'develop', cwd=tier)
+git('push', '-q', '-u', 'origin', 'develop', cwd=tier)
+git('checkout', '-q', 'main', cwd=tier)
+assert hey.default_base(tier) == 'develop', hey.default_base(tier)
 rep = out_of(hey.cmd_doctor, ns, cfg_for(odd))
 assert 'FAIL' not in rep, rep
 assert 'no local `main`, `develop` or `master`' in rep, rep
@@ -829,7 +849,89 @@ assert 'nothing uncommitted or unpushed' not in rep, rep
 # Being the base branch is not a squash merge -- the trees match because it is the same
 # commit, and reading that as "already merged" is what zeroed the count.
 assert hey.already_merged(local, 'integration') is False
+
+# An upstream is not proof of a push, and cannot stand in for one. `--track` sets tracking
+# configuration on a branch that has never left the machine, so a squash-merged branch of
+# that shape looks tracked, is not contained anywhere, and had its rewritten commits
+# reported as work at risk -- the exact false alarm the exemption exists to prevent.
+# Containment is the axis, not tracking: the base here is a remote ref, so the content is
+# somewhere safe and only the commits are gone.
+git('checkout', '-q', 'main')
+git('push', '-q', '-u', 'origin', 'main')
+git('switch', '-q', '-c', 'tracked', '--track', 'origin/main')
+(local / 'e.txt').write_text('e')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work on a tracked branch')
+git('switch', '-q', 'main')
+git('merge', '-q', '--squash', 'tracked')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'squashed onto main')
+git('push', '-q', 'origin', 'main')
+git('switch', '-q', 'tracked')
+
+assert hey.unpushed(local, 'main')[1] is True, 'the branch has an upstream'
+assert hey.base_ref(local, 'main') == 'origin/main', hey.base_ref(local, 'main')
+assert hey.already_merged(local, 'main') is True, 'the content is in origin/main'
+assert hey.unpushed(local, 'main')[0] == 0, hey.unpushed(local, 'main')
+
+# The mirror image, and the reason the test is containment rather than "the trees match":
+# a base that lives only on this machine certifies nothing. Work whose net tree equals a
+# local branch is still work no remote has, and exempting it there is the all-clear that
+# started this -- so the same shape that is silent against `origin/main` above must not be
+# silent against a local `integration`.
+git('switch', '-q', 'integration')
+git('switch', '-q', '-c', 'sidework')
+(local / 'f.txt').write_text('f')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add f')
+(local / 'f.txt').unlink()
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'revert f')
+
+assert hey.base_ref(local, 'integration') == 'integration', hey.base_ref(local, 'integration')
+assert hey.already_merged(local, 'integration') is True, 'the net tree does match'
+assert hey.unpushed(local, 'integration')[0] > 0, hey.unpushed(local, 'integration')
 git('checkout', '-q', 'feature')
+
+# And none of it may depend on the remote being called `origin`. A repository whose only
+# remote is `upstream` used to resolve its base locally, and everything downstream then had
+# to guess whether that meant no remote held it -- three attempts at that guess, each
+# fixing the last one's blind spot. `base_ref` looks at every remote now, so the base
+# resolves to `upstream/main` and the guessing has nothing left to do.
+far = d / 'far'
+far.mkdir()
+git('init', '-q', '-b', 'main', '.', cwd=far)
+(far / 'a.txt').write_text('a')
+git('add', '-A', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=far)
+git('init', '-q', '--bare', str(d / 'far-bare'), cwd=far)
+git('remote', 'add', 'upstream', str(d / 'far-bare'), cwd=far)
+git('push', '-q', '-u', 'upstream', 'main', cwd=far)
+git('switch', '-q', '-c', 'work', cwd=far)
+(far / 'b.txt').write_text('b')
+git('add', '-A', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work', cwd=far)
+git('switch', '-q', 'main', cwd=far)
+git('merge', '-q', '--squash', 'work', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'squashed', cwd=far)
+git('push', '-q', 'upstream', 'main', cwd=far)
+git('switch', '-q', 'work', cwd=far)
+
+assert hey.remotes(far) == ['upstream'], hey.remotes(far)
+assert hey.base_ref(far, 'main') == 'upstream/main', hey.base_ref(far, 'main')
+assert hey.default_base(far) == 'main', hey.default_base(far)
+assert hey.already_merged(far, 'main') is True, 'the content is on upstream'
+assert hey.unpushed(far, 'main')[0] == 0, hey.unpushed(far, 'main')
+
+# The same repository once its local base is rewritten while keeping the remote's tree --
+# an amend, or a rebase that changed nothing. The base still resolves to the remote copy,
+# so the exemption holds. A test phrased as "does any remote contain this commit" answered
+# no here, because the local base no longer shares the remote's history.
+git('switch', '-q', 'main', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--amend', '--no-edit',
+    cwd=far)
+git('switch', '-q', 'work', cwd=far)
+assert hey.base_ref(far, 'main') == 'upstream/main', hey.base_ref(far, 'main')
+assert hey.unpushed(far, 'main')[0] == 0, hey.unpushed(far, 'main')
 
 # With a remote in play, a branch that has never reached it is work at risk again -- the
 # wording `dirty` reserves for exactly that, and the one the no-remote case must never use.
@@ -910,6 +1012,22 @@ mkt2 = d / 'elsewhere'
 (mkt2 / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
     {{'name': 'not-here', 'description': 'same name, different author, different thing'}},
 ]}}), encoding='utf-8')
+
+# Two plugins in one marketplace, each exporting a skill of the same name. They are distinct
+# capabilities, and a key without the owning plugin keeps whichever sorted first -- which
+# does not merely mis-attribute the loser, it makes it unnameable, since this list is the
+# bound on what may be suggested at all.
+twin = mkt / 'other'
+(twin / '.claude-plugin').mkdir(parents=True)
+(twin / '.claude-plugin' / 'plugin.json').write_text('{{}}', encoding='utf-8')
+(twin / 'skills' / 'folded').mkdir(parents=True)
+(twin / 'skills' / 'folded' / 'SKILL.md').write_text(
+    '---' + chr(10) + 'name: folded' + chr(10) + 'description: a different deploy skill'
+    + chr(10) + '---' + chr(10), encoding='utf-8')
+
+owners = sorted(p_ for k, n, p_, m, _ in hey.catalogue(None)
+                if n == 'folded' and m == 'somewhere')
+assert owners == ['not-here', 'other'], owners
 
 both = [(m, v) for k, n, p_, m, v in hey.catalogue(None) if n == 'not-here']
 assert sorted(m for m, _ in both) == ['elsewhere', 'somewhere'], both
@@ -1596,6 +1714,11 @@ def main() -> int:
          "[blocked] Marked elsewhere"),
         ([hey, "open-items"], "open-items: a closed item is not part of the plan",
          "10 open item(s)"),
+        # An item that puts its real work in subitems was arriving as a title and a total.
+        # This command is handed over as the whole plan, so the words that name the actual
+        # framework or service have to come with it.
+        ([hey, "open-items"], "open-items: an item's unfinished subitems come with it",
+         "    - part three"),
         ([hey, "context", "--date", today], "context"),
         ([board, "collect", "--date", yesterday], "collect (yesterday)", "baseline"),
         ([board, "collect", "--date", today], "collect (today)"),
@@ -2032,6 +2155,13 @@ def main() -> int:
     # remote ref asserted that `origin/trunk` had been found when nothing had looked. The
     # kept value is still reported -- saying "unresolved" would contradict the file this
     # command just wrote -- with what can read it said separately.
+    # Closed subitems stay out: they are not what is ahead, and a plan padded with finished
+    # work reads as bigger than it is. A negative, so it cannot ride in the `cases` list.
+    _, kids_out = run([hey, "open-items"], env, proj)
+    check("open-items: a closed subitem is not what is ahead",
+          "part three" in kids_out and "part one" not in kids_out
+          and "part two" not in kids_out, kids_out)
+
     check("add: a re-add with no --base reports the base it kept, not `unresolved`",
           code == 0 and "trunk  (kept)" in out and "unresolved" not in out, out)
     check("add: a kept base on a non-repository says nothing reads it",

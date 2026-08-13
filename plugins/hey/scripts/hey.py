@@ -237,7 +237,12 @@ def has_remote(root: Path) -> bool:
     the measure does not apply. Reporting it as a fault asks the user to fix something that
     is not broken, and the fix on offer, naming a base branch, cannot change it.
     """
-    return bool(_sh(["git", "remote"], root).strip())
+    return bool(remotes(root))
+
+
+def remotes(root: Path) -> list:
+    """Every remote this repository has, in the order git lists them."""
+    return [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
 
 
 def repos_below(root: Path, depth: int = 2) -> list:
@@ -277,13 +282,30 @@ def base_ref(root: Path, base: str | None) -> str | None:
 
     The remote copy wins where both exist. It is what the rest of the world has agreed on,
     and a local branch can sit behind it without anyone noticing.
+
+    **Every remote, not just `origin`.** Looking only there made the base of a repository
+    that calls its remote `upstream` resolve locally, and each thing downstream then had to
+    guess whether that meant "no remote has this" -- three separate attempts, each fixing
+    the previous one's blind spot, all of them compensating here. A remote is whatever the
+    repository says it is.
+
+    **A returned name says which it found**: `<remote>/<base>` for a remote copy, the bare
+    `<base>` for a local branch. That is the only thing callers need to know whether a
+    remote holds this, so none of them has to ask by name.
     """
     if not base:
         return None
-    for ref, rev in ((f"refs/remotes/origin/{base}", f"origin/{base}"),
-                     (f"refs/heads/{base}", base)):
-        if _sh(["git", "rev-parse", "--verify", "--quiet", ref], root):
-            return rev
+    # `origin` first among remotes when it exists, since that is the one a repository with
+    # several means by default. Local last: a branch here can sit behind its remote copy
+    # without anyone noticing, so the copy wins wherever both exist.
+    names = remotes(root)
+    order = [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
+    for rem in order:
+        if _sh(["git", "rev-parse", "--verify", "--quiet",
+                f"refs/remotes/{rem}/{base}"], root):
+            return f"{rem}/{base}"
+    if _sh(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{base}"], root):
+        return base
     return None
 
 
@@ -301,6 +323,16 @@ def default_base(root: Path) -> str | None:
     ref = _sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
     if ref.startswith("origin/"):
         return ref[len("origin/"):]
+    # Every remote candidate before any local one. Asking `base_ref` per candidate mixes
+    # the two tiers: it answers "remote or local `main`" before anything has looked for
+    # `develop` on the remote, so a repository integrating on a remote `develop` while
+    # keeping a stale local `main` silently starts counting against the wrong branch.
+    # Remote-first is what the docstring promises, and it has to be a pass, not a
+    # preference inside a per-candidate lookup.
+    for cand in ("main", "develop", "master"):
+        got = base_ref(root, cand)
+        if got and got != cand:
+            return cand
     for cand in ("main", "develop", "master"):
         if base_ref(root, cand):
             return cand
@@ -384,7 +416,29 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     up = _sh(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
              worktree)
     has_up = bool(up) and up != "@{upstream}"
-    if not has_remote(worktree) or already_merged(worktree, base):
+    if not has_remote(worktree):
+        return 0, has_up
+    # The exemption is about content a **remote** already holds, and nothing else. Losable
+    # means no remote has it: where the base is a remote ref and the trees match, deleting
+    # this branch loses commits but no work, which is the squash-merge case and is not
+    # worth a warning.
+    #
+    # The base being local is what makes the difference. Content sitting in a local branch
+    # says nothing about any remote, so suppressing there hands back an all-clear over work
+    # that exists in one place -- which is how a base resolving locally turned every commit
+    # on it into zero.
+    #
+    # An upstream cannot stand in for this test. `switch -c feature --track origin/main`
+    # gives a branch an upstream it has never been pushed to, so keying on that reported
+    # the rewritten commits of a squash-merged branch as work at risk. Tracking is
+    # configuration; containment is a fact.
+    # `base_ref` answers this now: it returns `<remote>/<base>` when a remote holds the
+    # base and the bare `<base>` when only this machine does. Three earlier attempts asked
+    # it some other way -- whether the branch had an upstream, whether the ref began with
+    # `origin/`, whether any remote contained that commit -- and each was a guess standing
+    # in for a fact the lookup already knew but was throwing away.
+    ref = base_ref(worktree, base)
+    if ref and ref != base and already_merged(worktree, base):
         return 0, has_up
     out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
     return len([ln for ln in out.split("\n") if ln.strip()]), has_up
@@ -554,6 +608,12 @@ class Ledger:
                     "text": m[2],
                     "done": m[1].lower() == "x",
                     "kids": [],
+                    # Kept alongside the box state, because a subitem's words are the only
+                    # place the concrete work is written down. The parent line names the
+                    # deliverable; `Cloud Functions trigger` and `Firestore rules` live
+                    # underneath it, and anything reading the plan without them is reading
+                    # half a plan.
+                    "kid_text": [],
                     "kid_ai": [],
                     "id": (self.ID.search(m[2]) or [None, None])[1],
                     "branches": self.BRANCH.findall(m[2]),
@@ -570,6 +630,7 @@ class Ledger:
                 if cur is None:
                     continue
                 cur["kids"].append(k[1].lower() == "x")
+                cur["kid_text"].append(k[2])
                 w = self.KID_AI.search(k[2])
                 cur["kid_ai"].append(float(w[1]) if w else None)
                 # A subitem is usually the thing that becomes one branch and one PR, so
@@ -2295,6 +2356,14 @@ def cmd_open_items(args, cfg):
             mark = " [blocked]" if led.key(it) in blocked else ""
             text = Ledger.MARKERS.sub("", it["text"]).replace("**", "").strip()
             print(f"  {it['phase']}{mark} {text}")
+            # Open subitems, under their parent. This command is handed over as the whole
+            # plan, and an item that puts its real work in children -- the framework, the
+            # service, the kind of testing -- was arriving as a title and a total with the
+            # substance stripped out. Closed ones stay out: they are not what is ahead.
+            for done, kid in zip(it["kids"], it["kid_text"]):
+                if not done:
+                    kid = Ledger.MARKERS.sub("", kid).replace("**", "").strip()
+                    print(f"    - {kid}")
 
 
 PLUGIN_ROW = re.compile(r"^\s*❯\s*([\w.-]+)@([\w.-]+)")
@@ -2428,14 +2497,15 @@ def catalogue(have) -> list:
             if have is None or plug is None or f"{plug}@{mkt.name}" not in have:
                 out.append(("skill", f.get("name") or sk.parent.name, plug, mkt.name,
                             f["description"]))
-    # Keyed by marketplace as well, because two marketplaces may each ship a `code-review`
-    # and they are not the same plugin. Collapsing them kept whichever directory sorted
-    # first and attributed it to that marketplace, which is the one fact the reader was told
-    # to weigh.
+    # Keyed by the plugin and the marketplace both, because neither alone identifies a row.
+    # Two marketplaces may each ship a `code-review`; two plugins inside one marketplace may
+    # each export a `deploy` skill. Dropping either half collapses distinct capabilities into
+    # whichever sorted first, and this list is the bound on what may be suggested -- so the
+    # loser is not merely mis-attributed, it becomes unnameable.
     seen, uniq = set(), []
     for row in out:
-        if row[:2] + row[3:4] not in seen:
-            seen.add(row[:2] + row[3:4])
+        if row[:4] not in seen:
+            seen.add(row[:4])
             uniq.append(row)
     return uniq
 
