@@ -224,19 +224,85 @@ def worktree_roots(root: Path) -> list[Path]:
     return out or [root]
 
 
-def default_base(root: Path) -> str | None:
-    """The branch a repository is measured against: whatever its remote calls default.
+def has_remote(root: Path) -> bool:
+    """Does this repository have anywhere to push at all?
 
-    Returns None rather than guessing. A wrong base makes `origin/<base>..HEAD` fail,
-    and a failed comparison silently reads as "zero unpushed commits" — which hides
-    exactly the state this tool exists to surface.
+    **Empty is an answer, not a gap.** Every other absence around here is treated that way
+    -- `[since unknown]` records that the date was looked for and is not there, and a `gh`
+    that cannot reply is reported rather than read as zero. A repository with no remote has
+    been asked and has answered: there is nowhere for work to go.
+
+    That distinction is the whole point. `unpushed` measures work that could be somewhere
+    safer and is not, and the answer is neither zero nor unknown when no remote exists --
+    the measure does not apply. Reporting it as a fault asks the user to fix something that
+    is not broken, and the fix on offer, naming a base branch, cannot change it.
+    """
+    return bool(_sh(["git", "remote"], root).strip())
+
+
+def repos_below(root: Path, depth: int = 2) -> list:
+    """Git repositories within a couple of levels of a directory that is not one itself.
+
+    Printed at registration and nowhere else. **It never decides anything**: one project is
+    one repository here, and adopting a repository the user did not name would file their
+    commits, code counts and worktrees under a project that was never asked to hold them.
+    Two levels because the shape this exists for is `Project/Sources`, and a deeper walk
+    wanders into `node_modules` and vendored trees for no gain.
+    """
+    out, hidden = [], {"node_modules", "vendor", "Pods", "build", ".build", "Carthage"}
+    def walk(d: Path, left: int):
+        try:
+            kids = sorted(x for x in d.iterdir() if x.is_dir() and not x.is_symlink())
+        except OSError:
+            return
+        for k in kids:
+            if k.name.startswith(".") or k.name in hidden:
+                continue
+            if (k / ".git").exists():
+                out.append(k)
+            elif left > 1:
+                walk(k, left - 1)
+    walk(root, depth)
+    return out
+
+
+def base_ref(root: Path, base: str | None) -> str | None:
+    """The revision a base branch names here, or None when it names nothing.
+
+    **`origin/` is a place to look, not part of the name.** Spelling the remote copy into
+    every comparison made the base unresolvable in a repository that has no remote -- and
+    such a repository still has an integration branch, still accumulates work that has not
+    reached it, and that is still worth counting. Nothing about the measurement needed a
+    remote; only the string did.
+
+    The remote copy wins where both exist. It is what the rest of the world has agreed on,
+    and a local branch can sit behind it without anyone noticing.
+    """
+    if not base:
+        return None
+    for ref, rev in ((f"refs/remotes/origin/{base}", f"origin/{base}"),
+                     (f"refs/heads/{base}", base)):
+        if _sh(["git", "rev-parse", "--verify", "--quiet", ref], root):
+            return rev
+    return None
+
+
+def default_base(root: Path) -> str | None:
+    """The branch a repository is measured against: whatever it calls default.
+
+    Returns None rather than guessing. A wrong base makes `<base>..HEAD` fail, and a failed
+    comparison silently reads as "zero unpushed commits" — which hides exactly the state
+    this tool exists to surface.
+
+    Asked of the remote first and of the local branches second, so a repository that has
+    never had a remote still resolves. A guess is only ever made from the three names that
+    mean "this is where work lands"; anything else stays None.
     """
     ref = _sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
     if ref.startswith("origin/"):
         return ref[len("origin/"):]
     for cand in ("main", "develop", "master"):
-        if _sh(["git", "rev-parse", "--verify", "--quiet",
-                f"refs/remotes/origin/{cand}"], root):
+        if base_ref(root, cand):
             return cand
     return None
 
@@ -264,9 +330,17 @@ def already_merged(worktree: Path, base: str | None) -> bool:
     unpushed work makes the report nag about a branch whose only remaining job is to be
     deleted. Comparing trees instead of commits is what tells the two apart.
     """
-    if not base:
+    ref = base_ref(worktree, base)
+    if not ref:
         return False
-    diff = subprocess.run(["git", "diff", "--quiet", f"origin/{base}", "HEAD"],
+    # Standing on the base branch is not a squash merge. The trees match because they are
+    # the same commit, and reading that as "already merged" declared the branch's work safe
+    # somewhere else when it had not gone anywhere -- which zeroed the unpushed count on
+    # exactly the branch whose commits no remote had. This describes a *leftover*: same
+    # content, different history. Same history is neither.
+    if _sh(["git", "rev-parse", "HEAD"], worktree) == _sh(["git", "rev-parse", ref], worktree):
+        return False
+    diff = subprocess.run(["git", "diff", "--quiet", ref, "HEAD"],
                           cwd=worktree, capture_output=True)
     return diff.returncode == 0
 
@@ -278,34 +352,42 @@ def ahead_of_base(worktree: Path, base: str | None) -> tuple[list[str], bool]:
     must never be reported as zero — see `default_base`. Commits whose content is already
     merged are excluded; see `already_merged`.
     """
-    if not base:
-        return [], False
-    if not _sh(["git", "rev-parse", "--verify", "--quiet",
-                f"refs/remotes/origin/{base}"], worktree):
+    ref = base_ref(worktree, base)
+    if not ref:
         return [], False
     if already_merged(worktree, base):
         return [], True
-    out = _sh(["git", "log", "--oneline", f"origin/{base}..HEAD"], worktree)
+    out = _sh(["git", "log", "--oneline", f"{ref}..HEAD"], worktree)
     return [ln for ln in out.split("\n") if ln.strip()], True
 
 
 def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
-    """(commits not on any remote, whether the branch has an upstream at all).
+    """(commits no remote holds, whether the branch has an upstream at all).
 
     `ahead_of_base` answers a different question -- what is not in the base branch yet --
     and a pushed feature branch answers that too. Reporting those as work at risk is a
     false alarm, and a card full of false alarms is one nobody reads. Work is only
     losable while no remote has it.
 
-    With no upstream, nothing on the branch has left the machine, so everything it holds
-    over the base counts. With one, only what sits past it does.
+    **Asked of every remote ref, never of the base branch.** Deriving this from the base
+    was an approximation that held only while a base was always a remote ref. Once a base
+    could resolve to a local branch, standing on that branch made `base..HEAD` empty and
+    the answer zero -- while every commit on it sat on no remote at all. A false all-clear
+    over exactly the state this exists to surface, and worse than the "could not check"
+    it replaced. `HEAD --not --remotes` asks the real question and needs no base.
+
+    Zero where the question does not apply: a repository with no remote has nothing that
+    could have been pushed, and `doctor` and `dirty` both say so in their own words rather
+    than leaving it to a count. Squash-merged branches are excluded for the same reason as
+    ever -- see `already_merged`.
     """
     up = _sh(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
              worktree)
-    if not up or up == "@{upstream}":
-        return len(ahead_of_base(worktree, base)[0]), False
-    out = _sh(["git", "log", "--oneline", f"{up}..HEAD"], worktree)
-    return len([ln for ln in out.split("\n") if ln.strip()]), True
+    has_up = bool(up) and up != "@{upstream}"
+    if not has_remote(worktree) or already_merged(worktree, base):
+        return 0, has_up
+    out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
+    return len([ln for ln in out.split("\n") if ln.strip()]), has_up
 
 
 def resolve_project(cfg: dict, cwd: Path | None = None) -> dict | None:
@@ -1013,6 +1095,7 @@ def cmd_add(args, cfg):
     # the entry keeps the base already on record, and reporting "unresolved" there
     # contradicts the config this command just wrote.
     settled = entry.get("base")
+    ref = base_ref(root, settled) if main_root else None
     if settled:
         if args.base:
             how = ""
@@ -1020,11 +1103,41 @@ def cmd_add(args, cfg):
             how = "  (detected)"
         else:
             how = "  (kept)"
-        print(f"  base:   origin/{settled}{how}")
+        # What went into the config either way -- reporting "unresolved" for a base this
+        # command just wrote would contradict the file it wrote. What follows it is whether
+        # anything can read it, which is a separate fact and used to go unsaid: a recorded
+        # base printed as `origin/<name>` claimed a remote branch nobody had checked for.
+        if ref:
+            print(f"  base:   {ref}{how}")
+        elif not main_root:
+            print(f"  base:   {settled}{how} - not a git repository, so nothing reads it. "
+                  f"The checklist works as normal")
+        else:
+            print(f"  base:   {settled}{how} - names no branch here, on the remote or "
+                  f"locally. `doctor` will keep saying so")
+    elif not main_root:
+        # Neither line below applies to a directory that is not a repository, and both used
+        # to print anyway -- one telling the user to name a base branch that nothing would
+        # read, the other to edit a `.git` that is not there. The checklist half of this
+        # tool never needed git, so say what does not apply and leave it at that.
+        print("  base:   not a git repository - commit and push measures do not apply. "
+              "The checklist works as normal")
+        # Registering the directory above the repository is an easy miss -- a project whose
+        # code sits in `Sources/` looks like the project from the outside. Named, not acted
+        # on: `add` cannot know which of them the ledger is meant to describe, and picking
+        # one silently would attach the numbers to a repository nobody chose.
+        found = repos_below(root)
+        for r in found[:3]:
+            print(f"          a repository sits below: {r}")
+        if found:
+            print(f"          re-add with that path if it is the project")
+    elif not has_remote(root):
+        print("  base:   no remote - there is nowhere to push, so unpushed work is not a "
+              "measure here. Commits and code counts are unaffected")
     else:
         print("  base:   unresolved - unpushed commits cannot be counted. "
               "Re-run with `--base <branch>`")
-    if created:
+    if created and main_root:
         print("  the ledger is local state. Add it to .git/info/exclude")
 
 
@@ -1089,44 +1202,65 @@ def cmd_doctor(args, cfg):
         ok(f"root {root}")
         if not git_root(root):
             say("warn", "not a git repository - code counts and dirty checks stay empty")
+        elif not has_remote(root):
+            # Not a fault, and not something the user can clear by re-adding a base: there
+            # is no remote for a base to live on. It stays a warning rather than an `ok`
+            # because "nothing can be pushed" and "nothing needs pushing" look identical on
+            # screen and could not be further apart -- every commit here exists in exactly
+            # one place. Everything measured from commits alone still works.
+            say("warn", "no remote - work cannot leave this machine, so unpushed commits "
+                        "are not a measure here. Commits, code counts and worktrees are "
+                        "unaffected")
+            base = project_base(cfg, p)
+            ref = base_ref(root, base)
+            if ref:
+                ok(f"base {ref} (local)")
+            else:
+                say("warn", f"no local `{base}` either, so nothing counts what has not "
+                            f"reached the integration branch. Re-add with `--base <branch>` "
+                            f"naming a branch this repository has"
+                    if base else
+                    "no local `main`, `develop` or `master`, so nothing counts what has "
+                    "not reached the integration branch. Re-add with `--base <branch>`")
+            ok(f"{len(worktree_roots(root))} worktree(s) counted")
         else:
             base = project_base(cfg, p)
             if not base:
                 say("FAIL", "base branch unresolved - unpushed commits are never counted. "
                             'Set "base" for this project')
-            elif _sh(["git", "rev-parse", "--verify", "--quiet",
-                      f"refs/remotes/origin/{base}"], root):
-                ok(f"base origin/{base}")
+            elif base_ref(root, base):
+                ref = base_ref(root, base)
+                ok(f"base {ref}")
                 # The remote's default branch is not always the branch work merges into:
                 # a repository can keep `main` for releases and integrate on `develop`.
                 # Detected by the main worktree sitting well ahead of its own base, which
                 # otherwise makes every report count commits pushed weeks ago.
                 cur = _sh(["git", "branch", "--show-current"], root)
-                if cur and cur != base:
-                    n = _sh(["git", "rev-list", "--count",
-                             f"origin/{base}..origin/{cur}"], root)
+                cur_ref = base_ref(root, cur) if cur else None
+                if cur_ref and cur != base:
+                    n = _sh(["git", "rev-list", "--count", f"{ref}..{cur_ref}"], root)
                     if n.isdigit() and int(n) >= 10:
                         say("warn", f"this worktree is on `{cur}`, {n} commit(s) ahead of "
-                                    f"origin/{base}. If `{cur}` is what work merges into, "
-                                    f"re-add with `--base {cur}` - otherwise every report "
-                                    f"counts commits that were pushed long ago")
+                                    f"{ref}. If `{cur}` is what work merges into, re-add "
+                                    f"with `--base {cur}` - otherwise every report counts "
+                                    f"commits that were pushed long ago")
             else:
-                say("FAIL", f"origin/{base} does not exist - unpushed commits are never "
-                            f"counted. Re-add with --base <branch>")
+                say("FAIL", f"`{base}` names no branch here, on the remote or locally - "
+                            f"unpushed commits are never counted. Re-add with --base <branch>")
             trees = worktree_roots(root)
             ok(f"{len(trees)} worktree(s) counted")
             # Squash-merged branches keep commits the base never saw. `dirty` and the
             # session hook stay quiet about them so they do not nag every session, which
             # leaves this the only place the leftover surfaces.
             for w in trees:
-                if not _sh(["git", "log", "--oneline",
-                            f"origin/{base}..HEAD"], w):
+                ref = base_ref(w, base)
+                if not ref or not _sh(["git", "log", "--oneline", f"{ref}..HEAD"], w):
                     continue
                 if already_merged(w, base):
                     branch = _sh(["git", "branch", "--show-current"], w) or "detached"
-                    say("warn", f"{w.name} on `{branch}` is already merged into "
-                                f"origin/{base} - the commits differ but the content does "
-                                f"not, which is what a squash merge leaves. Delete it")
+                    say("warn", f"{w.name} on `{branch}` is already merged into {ref} - the "
+                                f"commits differ but the content does not, which is what a "
+                                f"squash merge leaves. Delete it")
 
         led = Path(p["ledger"])
         if not led.exists():
@@ -1727,12 +1861,17 @@ def cmd_dirty(args, cfg):
         root = Path(p["root"])
         led = Ledger(p) if Path(p["ledger"]).exists() else None
         base = args.base or project_base(cfg, p)
+        # Asked once for the repository, not once per worktree: worktrees share its remotes.
+        remote = has_remote(root)
         found, comparable = False, True
         for w in worktree_roots(root):
             st = _sh(["git", "status", "--short"], w)
             br = _sh(["git", "branch", "--show-current"], w)
             ahead, ok = ahead_of_base(w, base)
-            gone, has_up = unpushed(w, base)
+            # Only asked where it can be answered. `unpushed` counts what no remote holds,
+            # and with no remote at all every commit qualifies -- a number that is both
+            # correct and useless, since no amount of work makes it go down.
+            gone, has_up = unpushed(w, base) if remote else (0, False)
             comparable = comparable and ok
             if st or gone or ahead:
                 found = True
@@ -1746,13 +1885,30 @@ def cmd_dirty(args, cfg):
                     where = "unpushed" if has_up else "on a branch never pushed"
                     print(f"    {gone} commit(s) {where}")
                 if ahead and not gone:
-                    print(f"    {len(ahead)} commit(s) pushed but not in origin/{base}")
+                    # Without a remote this is the only commit measure there is, and it is
+                    # a real one: work that has not reached the branch it lands on.
+                    where = "pushed but not in" if remote else "not yet in"
+                    print(f"    {len(ahead)} commit(s) {where} {base_ref(w, base) or base}")
                 if st:
                     print(f"    {len(st.split(chr(10)))} uncommitted file(s)")
                     for f in st.split("\n")[:5]:
                         print(f"      {f}")
-        if not comparable:
-            missing = f"origin/{base} not found" if base else "no remote default branch"
+        if not git_root(root):
+            # Said plainly rather than as a failed check. There are no commits here to be
+            # ahead of anything, and telling somebody to set a base branch for a directory
+            # that is not a repository sends them after a setting that would change nothing.
+            print(f"[{p['name']}] not a git repository - there are no commits to check")
+        elif not remote:
+            # Standing, and printed whether or not anything was found above -- unlike the
+            # two below it is not a gap in the report but a fact about the repository, and
+            # the commits counted above were measured against a local branch.
+            print(f"[{p['name']}] no remote - nothing here can be pushed, so nothing is "
+                  f"waiting to be. Commits are counted against `{base or 'no base'}` locally")
+        elif not comparable:
+            # The remaining case, and the only one that is actually a misconfiguration: a
+            # remote exists and the base names nothing on it or beside it. This one the user
+            # can fix, so it is the only one that asks them to.
+            missing = f"{base} not found" if base else "no default branch"
             print(f"[{p['name']}] unpushed commits were NOT checked ({missing}). "
                   f'Set "base" for this project in {CONFIG}')
         elif not found:
@@ -2118,6 +2274,228 @@ def cmd_import_tasks(args, cfg):
     print("\n".join(out))
 
 
+def cmd_open_items(args, cfg):
+    """Every open item's own words, whole and unranked. The input side of a capability match.
+
+    `next` and `batch` both answer "what should I do now", so both are sorted and cut short.
+    A question about the *shape of the plan* needs the opposite: all of it, in ledger order,
+    with nothing dropped -- what gets cut is exactly what a suggestion would have keyed on.
+
+    This exists so the reading is reproducible. A model matching against whatever the
+    conversation happens to hold cannot be asked why it said what it said, and gives two
+    answers for one ledger. Blocked items are printed and marked rather than filtered:
+    waiting on an external console is a fact about the plan, and dropping it silently would
+    hide the part most likely to want a capability.
+    """
+    for p, led in _each(args, cfg):
+        rows = [i for i in led.items if Ledger.state(i) != S.DONE]
+        blocked = {b["key"] for b in led.blockers()}
+        print(f"[{p['name']}] {len(rows)} open item(s)")
+        for it in rows:
+            mark = " [blocked]" if led.key(it) in blocked else ""
+            text = Ledger.MARKERS.sub("", it["text"]).replace("**", "").strip()
+            print(f"  {it['phase']}{mark} {text}")
+
+
+PLUGIN_ROW = re.compile(r"^\s*❯\s*([\w.-]+)@([\w.-]+)")
+# The host keeps its plugins wherever it was told to. Read from the same variable the host
+# reads, for the same reason `board.py` takes `HEY_TRANSCRIPTS`: a path written into the
+# source is right until somebody moves it, and then it is silently empty rather than wrong
+# out loud. Scanning the default tree while `claude` answers from another one produces a
+# catalogue and an installed list that describe two different machines.
+CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+MARKETPLACES = CLAUDE_HOME / "plugins" / "marketplaces"
+# `description:` with the text on the lines below is as valid as `description: >`, so the
+# value is allowed to be empty here. Requiring a character meant that shape matched nothing,
+# and the skill then dropped out of the catalogue with no description and no complaint.
+FRONT = re.compile(r"^(name|description):\s*(.*?)\s*$")
+
+
+def installed_plugins():
+    """`{'name@marketplace', ...}` from the host CLI, or **None** when it could not be asked.
+
+    None and the empty set are different answers and the caller has to tell them apart: an
+    empty set means the host answered and has nothing installed, None means nobody answered.
+    Folding the second into the first would filter nothing while reporting that it had, and
+    this repository already settled that argument once -- `pr-sync` reports a `gh` that
+    cannot answer rather than reading it as zero markers.
+
+    Keyed by `name@marketplace`, not by name. Two marketplaces are free to ship a
+    `code-review`, and matching on the bare name marks the one you do not have as installed
+    because of the one you do.
+    """
+    if not shutil.which("claude"):
+        return None
+    p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
+                       # A CLI that reads stdin and inherits a terminal blocks forever, and
+                       # this one is most often run from inside a session that has one.
+                       stdin=subprocess.DEVNULL)
+    if p.returncode != 0:
+        return None
+    return {f"{m[1]}@{m[2]}" for ln in p.stdout.split("\n") if (m := PLUGIN_ROW.match(ln))}
+
+
+def _front(path: Path) -> dict:
+    """`name` and `description` from a SKILL.md front matter block.
+
+    Folded scalars are joined rather than skipped. `description: >` followed by indented
+    lines is the common shape, and taking the marker line at face value stores `>` as the
+    description -- which reads as a skill nobody described, when in fact the description is
+    the next four lines. This is not YAML parsing, and does not try to be: two keys, one
+    fold, no dependencies.
+    """
+    got, key = {}, None
+    try:
+        with path.open(encoding="utf-8") as fh:
+            if fh.readline().strip() != "---":
+                return {}
+            for _ in range(40):
+                ln = fh.readline()
+                if not ln or ln.strip() == "---":
+                    break
+                if m := FRONT.match(ln):
+                    key = m[1]
+                    got[key] = "" if m[2] in (">", "|", ">-", "|-") else m[2].strip("\"'")
+                elif key and ln[:1].isspace() and ln.strip():
+                    got[key] = (got[key] + " " + ln.strip()).strip()
+                elif ln.strip():
+                    key = None
+    except OSError:
+        return {}
+    return got
+
+
+def catalogue(have) -> list:
+    """Every capability this machine can see, as `(kind, name, plugin, marketplace, desc)`.
+
+    Read from the marketplaces already configured here, never written down in this file. A
+    table of tools-you-might-like baked into the source is wrong the week a name changes,
+    cannot know what this user has access to, and is the same mistake as a hard-coded
+    price: a fact nobody checked, printed as though somebody had.
+
+    **Nothing is matched here.** An earlier version of this scored the plan's words against
+    plugin tags and shipped zero suggestions from three ledgers, because the tags do not
+    exist -- 2 of 291 entries carry a `keywords` list. What every entry does carry is a
+    prose description, and reading prose against a plan written in another language is the
+    model's job, not a regex's. So this hands over the catalogue and stops. The list it
+    returns is also the bound: the model may name what is in here and nothing else.
+
+    **The plugin and the marketplace are separate columns because they are separate facts.**
+    A skill arrives inside a plugin, which arrives from a marketplace; collapsing them into
+    one `source` gave skill rows a plugin name where the reader was told to expect a
+    marketplace, and `install this` then pointed at something that does not exist under that
+    name. The skill is instructed to attribute every suggestion, so the attribution has to
+    be true in both halves.
+
+    `have` is `None` when the host CLI could not be asked, and nothing is filtered then --
+    saying "not installed" about a machine nobody consulted is a claim, not a default.
+
+    Skills are only as complete as the clone on disk. A marketplace manifest lists plugins
+    without shipping them, so a plugin's skills are invisible until it is installed -- the
+    count is printed for that reason, rather than letting a short list read as a full one.
+    """
+    out = []
+    for man in sorted(MARKETPLACES.glob("*/.claude-plugin/marketplace.json")):
+        mkt = man.parent.parent
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        listed = [p.get("name") for p in data.get("plugins", []) if p.get("name")]
+        for p in data.get("plugins", []):
+            name, desc = p.get("name"), (p.get("description") or "").strip()
+            if name and (have is None or f"{name}@{mkt.name}" not in have):
+                out.append(("plugin", name, name, mkt.name, desc))
+        for sk in sorted(mkt.rglob("skills/*/SKILL.md")) + sorted(mkt.glob("*/SKILL.md")):
+            f = _front(sk)
+            if not f.get("description"):
+                continue
+            owner = sk.parent.parent
+            while owner != mkt and not (owner / ".claude-plugin" / "plugin.json").exists():
+                owner = owner.parent
+            # A skill that walks all the way up to the marketplace root has no manifest of
+            # its own to name an owner. Two things still can: the directory it sits in, when
+            # that matches a plugin the marketplace lists, and failing that a marketplace
+            # shipping exactly one plugin, which leaves nothing to be ambiguous about.
+            # Neither holds -- the owner is unknown and says so, rather than being
+            # attributed to the marketplace, which is not a thing anybody can install.
+            if owner != mkt:
+                plug = owner.name
+            elif sk.parent.name in listed:
+                plug = sk.parent.name
+            else:
+                plug = listed[0] if len(listed) == 1 else None
+            if have is None or plug is None or f"{plug}@{mkt.name}" not in have:
+                out.append(("skill", f.get("name") or sk.parent.name, plug, mkt.name,
+                            f["description"]))
+    # Keyed by marketplace as well, because two marketplaces may each ship a `code-review`
+    # and they are not the same plugin. Collapsing them kept whichever directory sorted
+    # first and attributed it to that marketplace, which is the one fact the reader was told
+    # to weigh.
+    seen, uniq = set(), []
+    for row in out:
+        if row[:2] + row[3:4] not in seen:
+            seen.add(row[:2] + row[3:4])
+            uniq.append(row)
+    return uniq
+
+
+def cmd_catalog(args, cfg):
+    """Capabilities this machine offers and does not already have installed. Suggests nothing.
+
+    This prints a catalogue. It does not read the ledger, does not rank, and does not
+    decide that anything here is worth having -- `/hey-plan` hands this list and the plan
+    to the model, which is the only party that can read a Korean item against an English
+    description. Keeping the judgement out of here is deliberate: the judgement is the part
+    that has to be checkable, and a score computed in Python looks settled in a way it has
+    not earned.
+
+    Nothing is installed, enabled or configured, here or anywhere it is called from.
+    """
+    have = None if args.all else installed_plugins()
+    rows, missing = catalogue(have), []
+    if args.show:
+        # Second stage. Names come from the first stage's own output, so this cannot be
+        # asked about something that was never offered -- and a name that reaches here and
+        # matches nothing is reported rather than dropped, because the caller believed it
+        # existed and needs to be told it does not.
+        want = {n.lower() for n in args.show}
+        rows = [r for r in rows if r[1].lower() in want]
+        missing = sorted(want - {r[1].lower() for r in rows})
+
+    # Three states, said apart. `have` empty is a host that answered and has nothing
+    # installed; `have` None is a host that could not be asked, and filtering did not
+    # happen. Printing one sentence for both told a healthy machine with no plugins that it
+    # had no CLI, and told a broken CLI that its answer had been used.
+    if args.all:
+        head = "everything the marketplaces list, installed or not"
+    elif have is None:
+        head = "**could not ask what is installed** -- nothing is filtered out"
+    else:
+        head = f"not installed, out of {len(have)} installed"
+    kinds = {k: sum(1 for r in rows if r[0] == k) for k in ("plugin", "skill")}
+    print(f"[catalog] {kinds['plugin']} plugin(s), {kinds['skill']} skill(s) — {head}")
+    for miss in missing:
+        # Named and not found. Said out loud, because the caller asked about this by name
+        # and silence here reads as "it exists but has nothing to say".
+        print(f"  not in the catalogue: {miss}")
+    for kind, name, plug, mkt, desc in rows:
+        # Plugin and marketplace both, always. `skill X (plugin Y)` alone reads as a
+        # marketplace named Y to anyone following the attribution rule, and there is no
+        # such marketplace to go and look at.
+        where = mkt if kind == "plugin" else f"{plug or 'plugin unknown'} @ {mkt}"
+        if args.names:
+            # A tenth of the payload. Enough to shortlist from -- `firebase`, `pyright-lsp`
+            # and `plugin-dev` say what they are -- with `--show` pulling the descriptions
+            # that actually decide it. Reading 321 descriptions to reject 315 is the cost
+            # this exists to avoid.
+            print(f"{kind[0]} {name} ({where})")
+        else:
+            # Whole description when a name was asked for, because that is the answer being
+            # asked for. Clipped in the full listing, where 321 untrimmed entries bury it.
+            print(f"  {kind:6} {name} ({where}) — {desc if args.show else desc[:100]}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="hey.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2196,6 +2574,19 @@ def main() -> None:
     sp = add("import-tasks", cmd_import_tasks,
              help="a spec-kit tasks.md as ledger items. Prints, never writes")
     sp.add_argument("path", help="path to tasks.md")
+    scoped(add("open-items", cmd_open_items,
+               help="every open item's own words, unranked and uncut"))
+    # Not `scoped`: the catalogue is a property of this machine, not of a ledger. It takes
+    # no project because it reads none -- the matching happens in the skill, with the
+    # ledger the skill already has open.
+    sp = add("catalog", cmd_catalog,
+             help="capabilities available here and not installed. Prints; never installs")
+    sp.add_argument("--all", action="store_true",
+                    help="include what is already installed")
+    sp.add_argument("--names", action="store_true",
+                    help="names and sources only, to shortlist from")
+    sp.add_argument("--show", nargs="+", metavar="NAME",
+                    help="full entries for these names, to decide on a shortlist")
     sp = scoped(add("draft-log", cmd_draft_log,
                     help="work-log entries drafted from git history. Prints, never writes"))
     sp.add_argument("--since", type=int, default=14, help="how many days back")

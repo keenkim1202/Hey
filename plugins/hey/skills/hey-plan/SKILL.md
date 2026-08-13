@@ -165,6 +165,68 @@ Then report:
 - The three largest items and why they are large
 - What the estimate excludes
 
+## 7. Say what the plan calls for, once
+
+Do this **after** the items are in the ledger. Three commands, in this order:
+
+```bash
+python3 "$HEY" open-items                           # the plan, whole and unranked
+python3 "$HEY" catalog --names                      # ~320 lines: what this machine offers
+python3 "$HEY" catalog --show <name> <name> ...     # full entries for a shortlist
+```
+
+**Read the plan from `open-items`, not from this conversation.** What is on screen right
+now includes everything that was said getting here, and matching against that gives a
+different answer every time for the same ledger. `open-items` is the same input twice.
+
+`catalog` reads the marketplaces configured on this machine. **It matches nothing and
+recommends nothing** — the matching is yours, because it needs a plan written in one
+language read against descriptions written in another, and a regex cannot do that. An
+earlier version tried and returned zero suggestions from every ledger it saw, in both
+languages.
+
+It prints a plugin as `p <name> (<marketplace>)` and a skill as
+`s <name> (<plugin> @ <marketplace>)` — a skill arrives inside a plugin, and the plugin is
+what gets installed. **If the header says it could not ask what is installed, say so and
+suggest nothing:** the list in front of you then includes things they already have, and you
+cannot tell which.
+
+Shortlist from the names, pull descriptions for the few that might fit, then:
+
+- **Only name what `catalog` printed.** It is the bound, not a hint. A name from memory is
+  a name the reader goes looking for and does not find, and they stop trusting the rest of
+  the plan with it
+- **Two suggestions at most.** Above that it is a list, and a list is what you produce
+  instead of choosing
+- **One line of evidence per suggestion, quoting the item.** "`firebase` — your plan has
+  *Firestore 보안 규칙 테스트* and *Cloud Functions 트리거*" is the whole argument. Without
+  the quote this is an advertisement
+- **Name the marketplace it came from, every time**, and for a skill the plugin as well.
+  `catalog` prints both. Something out of `claude-plugins-official` and something out of a
+  personal marketplace are different objects to the person reading, and only they can weigh
+  that. Two marketplaces may ship the same name, so the name alone does not identify it
+- **Say that the description is the vendor's own, once per block.** It is the entire basis
+  of the match, nothing here has checked whether the thing works or is maintained, and a
+  suggestion that hides what it rests on is asking to be trusted rather than checked
+- **Say nothing about what they already have.** `catalog` filters installed plugins out
+- **Never install, enable or configure anything**, and never offer to. Print the command
+  and stop. A tool that acts on its own suggestion has stopped suggesting
+
+**When nothing fits, say so in one line** — "카탈로그에 이 계획에 맞는 것은 없습니다" — and
+move on. Nothing matching is the ordinary outcome, not a fault: the catalogue is mostly
+web, cloud and SaaS tooling, so a plan about iOS, an embedded target or a Korean vendor SDK
+will usually match nothing at all. Reaching for the nearest adjacent thing is how that goes
+wrong — offering a maps plugin to a project already on another maps SDK proposes a vendor
+swap, not a capability. The one line matters because silence and a broken step look
+identical from the outside.
+
+**Screen only. Never write any of this into the ledger.** The ledger is a record of work,
+and a suggestion put there outlives the moment it made sense in — it is still sitting in
+the file long after it was read, declined and forgotten.
+
+Once, here. Not in the daily commands, and not weekly — a line that arrives on a schedule
+stops being read, and this one has nothing new to say until the plan changes.
+
 ## Wording
 
 **How you word what you add is in the `hey-wording` skill** — three blocks at most, no praise, no filler, numbers copied from the script.

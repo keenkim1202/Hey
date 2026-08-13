@@ -602,6 +602,414 @@ assert b.token_usage({{'root': str(sibling)}}, day)['out'] == 500
 assert b.token_usage({{'root': str(proj)}}, day)['out'] == 10
 """
 
+ADD_PROBE = """
+import argparse, contextlib, io, os, subprocess, sys, tempfile
+from pathlib import Path
+
+d = Path(tempfile.mkdtemp()).resolve()
+# Its own home, set before the import that reads it. `add` writes the config, and a probe
+# that wrote into the shared fixture would register projects the cases after it can see.
+os.environ['HEY_HOME'] = str(d / 'home')
+sys.path.insert(0, {here!r})
+import hey
+
+
+def add(root, **kw):
+    args = argparse.Namespace(root=str(root), ledger=None, ledger_log=None, name=None,
+                              base=None, init=False)
+    for k, v in kw.items():
+        setattr(args, k, v)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        hey.cmd_add(args, hey.load_config())
+    return buf.getvalue()
+
+
+# A project whose code lives one level down. Registering the directory above it is the
+# ordinary mistake, and the two lines that used to print here were both about a git that is
+# not there: name a base branch nothing would read, edit a `.git` that does not exist.
+outer = d / 'outer'
+(outer / 'Sources').mkdir(parents=True)
+subprocess.run(['git', 'init', '-q', '-b', 'main', '.'], cwd=str(outer / 'Sources'),
+               check=True, capture_output=True)
+(outer / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
+
+out = add(outer, name='outer')
+assert 'not a git repository' in out, out
+assert 'checklist works as normal' in out, out
+assert 'a repository sits below' in out and 'Sources' in out, out
+assert 're-add with that path' in out, out
+# Named, never taken. Adopting it would file its commits under a project nobody pointed at
+# that repository.
+assert 'registered: outer' in out, out
+assert str(outer / 'Sources') not in hey.load_config()['projects'][0]['root'], out
+for forbidden in ('--base', '.git/info/exclude', 'unresolved'):
+    assert forbidden not in out, (forbidden, out)
+
+# And the repository itself, which has no remote and never will. The base it reports is the
+# branch it actually has, with no `origin/` dressed onto a name nothing verified.
+sources = outer / 'Sources'
+(sources / 'a.txt').write_text('a')
+subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A'],
+               cwd=str(sources), check=True, capture_output=True)
+subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x'],
+               cwd=str(sources), check=True, capture_output=True)
+out = add(sources, name='src', init=True)
+assert 'base:   main  (detected)' in out, out
+assert 'origin/' not in out, out
+assert '.git/info/exclude' in out, out
+"""
+
+NO_REMOTE_PROBE = """
+import argparse, contextlib, io, os, subprocess, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, {here!r})
+import hey
+
+# Resolved, because `git rev-parse` answers with the real path and macOS puts temporary
+# directories behind a symlink. Comparing the two forms fails on a machine and passes on a
+# machine, which is the kind of test that gets deleted rather than fixed.
+d = Path(tempfile.mkdtemp()).resolve()
+nogit = d / 'nogit'
+nogit.mkdir()
+local = d / 'local'
+local.mkdir()
+
+
+def git(*a, cwd=None):
+    subprocess.run(['git', *a], cwd=str(cwd or local), check=True, capture_output=True)
+
+
+git('init', '-q', '-b', 'main', '.')
+(local / 'a.txt').write_text('hi')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first')
+
+for p in (nogit, local):
+    (p / 'TASKS.local.md').write_text('# ledger' + chr(10) + chr(10) + '## P0. Phase (0 MD / AI 0)'
+                                      + chr(10) + chr(10) + '- [ ] **One** - 1 MD / AI 0.1' + chr(10),
+                                      encoding='utf-8')
+
+assert hey.git_root(nogit) is None, hey.git_root(nogit)
+assert hey.git_root(local) == local, hey.git_root(local)
+# Asked, and answered. This is what separates "nowhere to push" from "not looked at".
+assert hey.has_remote(local) is False
+git('remote', 'add', 'origin', str(d / 'bare'))
+assert hey.has_remote(local) is True
+git('remote', 'remove', 'origin')
+assert hey.has_remote(local) is False
+
+
+def out_of(fn, args, cfg):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            fn(args, cfg)
+        except SystemExit:
+            pass
+    return buf.getvalue()
+
+
+def cfg_for(root):
+    return {{'projects': [{{'name': 'p', 'root': str(root),
+                           'ledger': str(root / 'TASKS.local.md')}}], 'scope': 'all'}}
+
+
+ns = argparse.Namespace(project=None, scope='all', base=None)
+
+# Neither state is a fault, and neither can be cleared by naming a base branch -- so
+# neither may demand one. A `doctor` that fails over something with no available fix
+# teaches the reader to skip its output.
+for root in (nogit, local):
+    rep = out_of(hey.cmd_doctor, ns, cfg_for(root))
+    assert 'FAIL' not in rep, (root.name, rep)
+    assert '--base' not in rep and 'Set "base"' not in rep, (root.name, rep)
+assert 'no remote' in out_of(hey.cmd_doctor, ns, cfg_for(local))
+assert 'not a git repository' in out_of(hey.cmd_doctor, ns, cfg_for(nogit))
+
+# Nothing to check is not the same as not checked, and the difference is the whole reason
+# this repository reports a `gh` that cannot answer instead of reading it as a zero.
+dirty_nogit = out_of(hey.cmd_dirty, ns, cfg_for(nogit))
+assert 'no commits to check' in dirty_nogit, dirty_nogit
+assert 'NOT checked' not in dirty_nogit, dirty_nogit
+dirty_local = out_of(hey.cmd_dirty, ns, cfg_for(local))
+assert 'nothing here can be pushed' in dirty_local, dirty_local
+assert 'NOT checked' not in dirty_local, dirty_local
+
+# And the one case that *is* a misconfiguration keeps its failure and its instruction: a
+# remote exists, so a base branch is a real thing to set and setting it really fixes this.
+git('remote', 'add', 'origin', str(d / 'bare'))
+broken = cfg_for(local)
+broken['projects'][0]['base'] = 'nope'
+rep = out_of(hey.cmd_doctor, ns, broken)
+assert 'FAIL' in rep and 'names no branch here' in rep, rep
+assert 'NOT checked' in out_of(hey.cmd_dirty, ns, broken)
+
+# The base is a ref, and `origin/` is one place to look for it. A repository with no remote
+# still has a branch work lands on, still accumulates commits that have not reached it, and
+# that count is the measure the hardcoded `origin/` prefix made unreachable.
+git('remote', 'remove', 'origin')
+git('checkout', '-q', '-b', 'feature')
+(local / 'b.txt').write_text('more')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'second')
+
+assert hey.base_ref(local, 'main') == 'main', hey.base_ref(local, 'main')
+assert hey.base_ref(local, 'nope') is None
+assert hey.default_base(local) == 'main', hey.default_base(local)
+ahead, ok_ = hey.ahead_of_base(local, 'main')
+assert ok_ and len(ahead) == 1, (ok_, ahead)
+
+live = cfg_for(local)
+live['projects'][0]['base'] = 'main'
+rep = out_of(hey.cmd_dirty, ns, live)
+# Counted, and labelled for what it is. `unpushed` would be every commit in the repository
+# and would never go down, so it is not asked here at all.
+assert 'not yet in main' in rep, rep
+assert 'never pushed' not in rep and 'NOT checked' not in rep, rep
+assert 'no remote' in rep, rep
+assert 'base main (local)' in out_of(hey.cmd_doctor, ns, live)
+
+# Registering the directory above the repository is an easy miss: a project whose code
+# lives in `Sources/` looks like the project from outside. `add` names what it finds and
+# stops there -- one project is one repository, and adopting one nobody asked for would
+# file its commits under a project that never held them.
+(nogit / 'node_modules' / 'pkg').mkdir(parents=True)
+(nogit / 'node_modules' / 'pkg' / '.git').mkdir()
+(nogit / '.hidden').mkdir()
+(nogit / '.hidden' / '.git').mkdir()
+assert hey.repos_below(d) == [local], hey.repos_below(d)
+# A vendored tree is full of repositories and none of them is the project. Neither is
+# anything under a dot-directory.
+assert hey.repos_below(nogit) == [], hey.repos_below(nogit)
+
+# A branch nobody named `main`. `default_base` guesses from three names and this is none of
+# them, so it finds nothing -- which is a thing to say, not a thing to fail over, and the
+# branch the user does have resolves the moment they name it.
+odd = d / 'odd'
+odd.mkdir()
+git('init', '-q', '-b', 'trunk', '.', cwd=odd)
+(odd / 'a.txt').write_text('a')
+git('add', '-A', cwd=odd)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=odd)
+(odd / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
+
+assert hey.default_base(odd) is None, hey.default_base(odd)
+rep = out_of(hey.cmd_doctor, ns, cfg_for(odd))
+assert 'FAIL' not in rep, rep
+assert 'no local `main`, `develop` or `master`' in rep, rep
+named = cfg_for(odd)
+named['projects'][0]['base'] = 'trunk'
+assert 'base trunk (local)' in out_of(hey.cmd_doctor, ns, named)
+
+# A remote exists, and the base names a branch only this machine has. It resolves to the
+# local one: the comparison works, so refusing it would withhold a measure over a prefix.
+git('remote', 'add', 'origin', str(d / 'bare'))
+git('branch', 'integration', 'main')
+side = cfg_for(local)
+side['projects'][0]['base'] = 'integration'
+rep = out_of(hey.cmd_doctor, ns, side)
+assert 'base integration' in rep and 'FAIL' not in rep, rep
+
+# And standing on that base, with everything on it absent from every remote. Resolving the
+# base was only half the question: `unpushed` used to derive its answer from `base..HEAD`,
+# which is empty on the base itself, so the count came back zero while no remote held a
+# single one of those commits. A false all-clear over the one state this tool exists to
+# surface, and worse than the "could not check" it replaced -- the earlier test asserted
+# the base resolved and never asked what was then reported.
+git('checkout', '-q', 'integration')
+for n in ('c', 'd'):
+    (local / (n + '.txt')).write_text(n)
+    git('add', '-A')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'never pushed ' + n)
+assert hey.unpushed(local, 'integration')[0] == 3, hey.unpushed(local, 'integration')
+rep = out_of(hey.cmd_dirty, ns, side)
+assert '3 commit(s) on a branch never pushed' in rep, rep
+assert 'nothing uncommitted or unpushed' not in rep, rep
+# Being the base branch is not a squash merge -- the trees match because it is the same
+# commit, and reading that as "already merged" is what zeroed the count.
+assert hey.already_merged(local, 'integration') is False
+git('checkout', '-q', 'feature')
+
+# With a remote in play, a branch that has never reached it is work at risk again -- the
+# wording `dirty` reserves for exactly that, and the one the no-remote case must never use.
+risky = out_of(hey.cmd_dirty, ns, live)
+assert 'on a branch never pushed' in risky, risky
+assert 'not yet in' not in risky, risky
+git('remote', 'remove', 'origin')
+"""
+
+CATALOG_PROBE = """
+import json, sys, tempfile; sys.path.insert(0, {here!r})
+from pathlib import Path
+import hey
+
+d = Path(tempfile.mkdtemp())
+mkt = d / 'somewhere'
+(mkt / '.claude-plugin').mkdir(parents=True)
+(mkt / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'already-here', 'description': 'installed, so it needs no suggesting'}},
+    {{'name': 'not-here', 'description': 'a thing this machine offers'}},
+]}}), encoding='utf-8')
+
+# A plugin ships its skills inside itself, and the description carries the words worth
+# matching on. `description: >` with the text on the lines below is the ordinary shape --
+# reading the marker line at face value files the skill under a description of `>`, which
+# is a skill nobody can match against and looks like one nobody described.
+sk = mkt / 'not-here' / 'skills' / 'folded'
+sk.mkdir(parents=True)
+(mkt / 'not-here' / '.claude-plugin').mkdir()
+(mkt / 'not-here' / '.claude-plugin' / 'plugin.json').write_text('{{}}', encoding='utf-8')
+(sk / 'SKILL.md').write_text('---' + chr(10) + 'name: folded' + chr(10)
+                             + 'description: >' + chr(10)
+                             + '  Reads Firestore security rules and' + chr(10)
+                             + '  writes the regression tests for them.' + chr(10)
+                             + '---' + chr(10), encoding='utf-8')
+
+# `description:` with the text on the lines below is as valid as the folded form, and used
+# to parse to no description at all -- which dropped the skill out of the catalogue with no
+# error. The catalogue is the bound on what may be named, so a silent omission here makes a
+# real capability permanently unnameable.
+bare = mkt / 'not-here' / 'skills' / 'bare'
+bare.mkdir(parents=True)
+(bare / 'SKILL.md').write_text('---' + chr(10) + 'name: bare' + chr(10)
+                               + 'description:' + chr(10)
+                               + '  Deploys the widget extension.' + chr(10)
+                               + '---' + chr(10), encoding='utf-8')
+
+hey.MARKETPLACES = mkt.parent
+rows = hey.catalogue({{'already-here@somewhere'}})
+names = {{n for _, n, _, _, _ in rows}}
+# What is installed needs no suggestion, and saying "you have this" every run is the
+# advertisement the whole command exists to avoid.
+assert 'already-here' not in names, names
+assert {{'not-here', 'folded', 'bare'}} <= names, names
+
+desc = {{n: v for _, n, _, _, v in rows}}
+assert desc['folded'].startswith('Reads Firestore'), desc['folded']
+assert 'regression tests' in desc['folded'], desc['folded']
+assert desc['bare'] == 'Deploys the widget extension.', desc['bare']
+
+# Plugin and marketplace are separate columns because they are separate facts. A skill row
+# carrying its plugin where the reader was told to expect a marketplace sends them looking
+# for a marketplace that does not exist.
+assert [(p, m) for k, n, p, m, _ in rows if n == 'folded'] == [('not-here', 'somewhere')]
+assert [(p, m) for k, n, p, m, _ in rows if n == 'not-here'] == [('not-here', 'somewhere')]
+
+# And a plugin whose own skills are visible is filtered out whole -- the skills go with it.
+# Offering a skill out of something already installed is the same advertisement, one level
+# down, and the harder one to notice.
+left = hey.catalogue({{'not-here@somewhere'}})
+assert {{n for _, n, _, _, _ in left}} == {{'already-here'}}, left
+
+# A second marketplace shipping the same plugin name. They are two different plugins, and
+# keeping only the one whose directory sorts first hands the reader an attribution for a
+# thing they did not look at -- which is the one fact the skill is told to pass on.
+mkt2 = d / 'elsewhere'
+(mkt2 / '.claude-plugin').mkdir(parents=True)
+(mkt2 / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'not-here', 'description': 'same name, different author, different thing'}},
+]}}), encoding='utf-8')
+
+both = [(m, v) for k, n, p_, m, v in hey.catalogue(None) if n == 'not-here']
+assert sorted(m for m, _ in both) == ['elsewhere', 'somewhere'], both
+assert {{v for m, v in both if m == 'elsewhere'}} == {{'same name, different author, different thing'}}
+
+# Installed is keyed by name *and* marketplace. The same name in another marketplace is a
+# different plugin, and marking it installed hides something the user does not have.
+other = hey.catalogue({{'not-here@elsewhere'}})
+assert {{'not-here', 'folded', 'bare'}} <= {{n for _, n, _, _, _ in other}}, other
+assert [m for k, n, p_, m, _ in other if n == 'not-here'] == ['somewhere'], other
+
+# Nobody could be asked, so nothing is filtered -- calling something "not installed" on a
+# machine that was never consulted is a claim, not a default. Which of the two it was is
+# said by the command, not decided here.
+assert 'already-here' in {{n for _, n, _, _, _ in hey.catalogue(None)}}
+"""
+
+CATALOG_CMD_PROBE = """
+import argparse, contextlib, io, json, os, sys, tempfile
+from pathlib import Path
+
+d = Path(tempfile.mkdtemp())
+# Set before the import, because the host reads this variable and so must we. A path fixed
+# in the source scans the default tree while `claude` answers from another one, and the two
+# then describe different machines with nothing on screen to say so.
+os.environ['CLAUDE_CONFIG_DIR'] = str(d)
+sys.path.insert(0, {here!r})
+import hey
+
+assert hey.MARKETPLACES == d / 'plugins' / 'marketplaces', hey.MARKETPLACES
+real_installed = hey.installed_plugins
+
+mkt = hey.MARKETPLACES / 'somewhere'
+(mkt / '.claude-plugin').mkdir(parents=True)
+(mkt / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'offered', 'description': 'a thing this machine offers'}},
+]}}), encoding='utf-8')
+
+
+def run(**kw):
+    args = argparse.Namespace(all=False, names=False, show=None)
+    for k, v in kw.items():
+        setattr(args, k, v)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        hey.cmd_catalog(args, {{}})
+    return buf.getvalue()
+
+
+# Three states, and each says which one it is. Reporting "nothing is installed" for a host
+# that could not be asked filters nothing while claiming it did, and this repository already
+# settled the same argument for `gh`.
+hey.installed_plugins = lambda: None
+assert 'could not ask' in run(), run()
+hey.installed_plugins = lambda: set()
+assert 'out of 0 installed' in run(), run()
+assert 'could not ask' not in run(), run()
+hey.installed_plugins = lambda: {{'offered@somewhere'}}
+assert 'out of 1 installed' in run(), run()
+
+# A name that matches nothing is reported on **every** path a caller uses. It was computed
+# and then dropped on the two machine-readable ones, which are the two the skill actually
+# runs -- so a typo came back as an empty result indistinguishable from a real absence.
+hey.installed_plugins = lambda: set()
+for form in ({{}}, {{'names': True}}):
+    out = run(show=['offered', 'nonesuch'], **form)
+    assert 'not in the catalogue: nonesuch' in out, (form, out)
+    assert 'offered' in out, (form, out)
+
+# And the same three states at their source, with a real subprocess rather than a stand-in.
+# Patching `installed_plugins` tests how the command reads the answer; nothing there notices
+# if the function itself turns a crashed host into an empty set.
+bin_dir = d / 'bin'
+bin_dir.mkdir()
+os.environ['PATH'] = str(bin_dir) + os.pathsep + os.environ['PATH']
+fake = bin_dir / 'claude'
+
+
+def host(body, code):
+    fake.write_text('#!/bin/sh' + chr(10) + body + chr(10) + 'exit ' + str(code) + chr(10))
+    fake.chmod(0o755)
+
+
+# The real one, kept from before the stand-ins above replaced the name on the module.
+hey.installed_plugins = real_installed
+
+
+host('echo "  \\u276f one@mkt-a"; echo "  \\u276f two@mkt-b"', 0)
+assert hey.installed_plugins() == {{'one@mkt-a', 'two@mkt-b'}}, hey.installed_plugins()
+# The marketplace half is kept. Dropping it marks `code-review` from a marketplace you do
+# not have as installed, on the strength of one you do.
+host('echo "  \\u276f code-review@mine"', 0)
+assert hey.installed_plugins() == {{'code-review@mine'}}, hey.installed_plugins()
+
+host('echo "config is broken" >&2', 1)
+assert hey.installed_plugins() is None, hey.installed_plugins()
+host('true', 0)
+assert hey.installed_plugins() == set(), hey.installed_plugins()
+"""
+
 AGE_MARK_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
 from hey import _blocker_age, display_width
@@ -1144,6 +1552,14 @@ def main() -> int:
             COMMIT_SPAN_PROBE.format(here=str(HERE), proj=str(proj)),
         "tokens are charged to a project by path, not by string prefix":
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
+        "no remote and no repository are answers, not faults":
+            NO_REMOTE_PROBE.format(here=str(HERE)),
+        "add names a repository below rather than adopting one":
+            ADD_PROBE.format(here=str(HERE)),
+        "the catalogue skips what is installed and reads a folded description":
+            CATALOG_PROBE.format(here=str(HERE)),
+        "catalog says whether it could ask, and reports a name it does not have":
+            CATALOG_CMD_PROBE.format(here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
@@ -1171,6 +1587,15 @@ def main() -> int:
         # print "these can run in parallel", overruling its own skill.
         ([hey, "batch"], "batch: reports absent evidence, not a parallel-safe verdict",
          "no overlap evidence in the item text"),
+        # The input side of a capability match. `next` and `batch` both cut their lists
+        # short because they answer "what now"; a question about the shape of the plan has
+        # to see the tail as well, and the tail is where an unusual item lives.
+        ([hey, "open-items"], "open-items: reaches past where next and batch stop",
+         "Not yet"),
+        ([hey, "open-items"], "open-items: a blocked item is marked rather than dropped",
+         "[blocked] Marked elsewhere"),
+        ([hey, "open-items"], "open-items: a closed item is not part of the plan",
+         "10 open item(s)"),
         ([hey, "context", "--date", today], "context"),
         ([board, "collect", "--date", yesterday], "collect (yesterday)", "baseline"),
         ([board, "collect", "--date", today], "collect (today)"),
@@ -1603,8 +2028,14 @@ def main() -> int:
          "--base", "trunk"], env, proj)
     code, out = run([hey, "add", str(split), "--name", "split", "--ledger", str(primary)],
                     env, proj)
+    # `trunk`, not `origin/trunk`: the config holds a branch name, and dressing it as a
+    # remote ref asserted that `origin/trunk` had been found when nothing had looked. The
+    # kept value is still reported -- saying "unresolved" would contradict the file this
+    # command just wrote -- with what can read it said separately.
     check("add: a re-add with no --base reports the base it kept, not `unresolved`",
-          code == 0 and "origin/trunk  (kept)" in out, out)
+          code == 0 and "trunk  (kept)" in out and "unresolved" not in out, out)
+    check("add: a kept base on a non-repository says nothing reads it",
+          "not a git repository, so nothing reads it" in out, out)
 
     # `git log --until <day> 23:59` means 23:59:00, so a commit made in the last minute of
     # the day fell outside it -- and the next day starts at 00:00, so it fell outside that
