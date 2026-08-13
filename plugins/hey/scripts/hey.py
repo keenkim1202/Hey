@@ -407,8 +407,13 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     # gives a branch an upstream it has never been pushed to, so keying on that reported
     # the rewritten commits of a squash-merged branch as work at risk. Tracking is
     # configuration; containment is a fact.
+    # Asked of the base commit itself: is some remote holding it? A ref named `origin/...`
+    # was a stand-in for that, and it fails the moment a repository calls its remote
+    # `upstream` -- the base then resolves locally, the exemption is refused, and a
+    # squash-merged branch is warned about again. Nothing here needs the remote's name.
     ref = base_ref(worktree, base)
-    if ref and ref.startswith("origin/") and already_merged(worktree, base):
+    if ref and _sh(["git", "branch", "-r", "--contains", ref], worktree) \
+            and already_merged(worktree, base):
         return 0, has_up
     out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
     return len([ln for ln in out.split("\n") if ln.strip()]), has_up

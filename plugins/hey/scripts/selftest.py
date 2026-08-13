@@ -892,6 +892,35 @@ assert hey.already_merged(local, 'integration') is True, 'the net tree does matc
 assert hey.unpushed(local, 'integration')[0] > 0, hey.unpushed(local, 'integration')
 git('checkout', '-q', 'feature')
 
+# And none of it may depend on the remote being called `origin`. A repository whose only
+# remote is `upstream` resolves its base locally, and a containment test written as a name
+# prefix refuses the exemption there -- warning about a squash-merged branch again, for no
+# reason but the name someone chose. The question is whether a remote holds the base, and
+# `branch -r --contains` asks exactly that.
+far = d / 'far'
+far.mkdir()
+git('init', '-q', '-b', 'main', '.', cwd=far)
+(far / 'a.txt').write_text('a')
+git('add', '-A', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=far)
+git('init', '-q', '--bare', str(d / 'far-bare'), cwd=far)
+git('remote', 'add', 'upstream', str(d / 'far-bare'), cwd=far)
+git('push', '-q', '-u', 'upstream', 'main', cwd=far)
+git('switch', '-q', '-c', 'work', cwd=far)
+(far / 'b.txt').write_text('b')
+git('add', '-A', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'work', cwd=far)
+git('switch', '-q', 'main', cwd=far)
+git('merge', '-q', '--squash', 'work', cwd=far)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'squashed', cwd=far)
+git('push', '-q', 'upstream', 'main', cwd=far)
+git('switch', '-q', 'work', cwd=far)
+
+assert hey._sh(['git', 'remote'], far) == 'upstream', hey._sh(['git', 'remote'], far)
+assert hey.base_ref(far, 'main') == 'main', hey.base_ref(far, 'main')
+assert hey.already_merged(far, 'main') is True, 'the content is on upstream'
+assert hey.unpushed(far, 'main')[0] == 0, hey.unpushed(far, 'main')
+
 # With a remote in play, a branch that has never reached it is work at risk again -- the
 # wording `dirty` reserves for exactly that, and the one the no-remote case must never use.
 risky = out_of(hey.cmd_dirty, ns, live)
