@@ -602,6 +602,243 @@ assert b.token_usage({{'root': str(sibling)}}, day)['out'] == 500
 assert b.token_usage({{'root': str(proj)}}, day)['out'] == 10
 """
 
+ADD_PROBE = """
+import argparse, contextlib, io, os, subprocess, sys, tempfile
+from pathlib import Path
+
+d = Path(tempfile.mkdtemp()).resolve()
+# Its own home, set before the import that reads it. `add` writes the config, and a probe
+# that wrote into the shared fixture would register projects the cases after it can see.
+os.environ['HEY_HOME'] = str(d / 'home')
+sys.path.insert(0, {here!r})
+import hey
+
+
+def add(root, **kw):
+    args = argparse.Namespace(root=str(root), ledger=None, ledger_log=None, name=None,
+                              base=None, init=False)
+    for k, v in kw.items():
+        setattr(args, k, v)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        hey.cmd_add(args, hey.load_config())
+    return buf.getvalue()
+
+
+# A project whose code lives one level down. Registering the directory above it is the
+# ordinary mistake, and the two lines that used to print here were both about a git that is
+# not there: name a base branch nothing would read, edit a `.git` that does not exist.
+outer = d / 'outer'
+(outer / 'Sources').mkdir(parents=True)
+subprocess.run(['git', 'init', '-q', '-b', 'main', '.'], cwd=str(outer / 'Sources'),
+               check=True, capture_output=True)
+(outer / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
+
+out = add(outer, name='outer')
+assert 'not a git repository' in out, out
+assert 'checklist works as normal' in out, out
+assert 'a repository sits below' in out and 'Sources' in out, out
+assert 're-add with that path' in out, out
+# Named, never taken. Adopting it would file its commits under a project nobody pointed at
+# that repository.
+assert 'registered: outer' in out, out
+assert str(outer / 'Sources') not in hey.load_config()['projects'][0]['root'], out
+for forbidden in ('--base', '.git/info/exclude', 'unresolved'):
+    assert forbidden not in out, (forbidden, out)
+
+# And the repository itself, which has no remote and never will. The base it reports is the
+# branch it actually has, with no `origin/` dressed onto a name nothing verified.
+sources = outer / 'Sources'
+(sources / 'a.txt').write_text('a')
+subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A'],
+               cwd=str(sources), check=True, capture_output=True)
+subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x'],
+               cwd=str(sources), check=True, capture_output=True)
+out = add(sources, name='src', init=True)
+assert 'base:   main  (detected)' in out, out
+assert 'origin/' not in out, out
+assert '.git/info/exclude' in out, out
+"""
+
+NO_REMOTE_PROBE = """
+import argparse, contextlib, io, os, subprocess, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, {here!r})
+import hey
+
+# Resolved, because `git rev-parse` answers with the real path and macOS puts temporary
+# directories behind a symlink. Comparing the two forms fails on a machine and passes on a
+# machine, which is the kind of test that gets deleted rather than fixed.
+d = Path(tempfile.mkdtemp()).resolve()
+nogit = d / 'nogit'
+nogit.mkdir()
+local = d / 'local'
+local.mkdir()
+
+
+def git(*a, cwd=None):
+    subprocess.run(['git', *a], cwd=str(cwd or local), check=True, capture_output=True)
+
+
+git('init', '-q', '-b', 'main', '.')
+(local / 'a.txt').write_text('hi')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first')
+
+for p in (nogit, local):
+    (p / 'TASKS.local.md').write_text('# ledger' + chr(10) + chr(10) + '## P0. Phase (0 MD / AI 0)'
+                                      + chr(10) + chr(10) + '- [ ] **One** - 1 MD / AI 0.1' + chr(10),
+                                      encoding='utf-8')
+
+assert hey.git_root(nogit) is None, hey.git_root(nogit)
+assert hey.git_root(local) == local, hey.git_root(local)
+# Asked, and answered. This is what separates "nowhere to push" from "not looked at".
+assert hey.has_remote(local) is False
+git('remote', 'add', 'origin', str(d / 'bare'))
+assert hey.has_remote(local) is True
+git('remote', 'remove', 'origin')
+assert hey.has_remote(local) is False
+
+
+def out_of(fn, args, cfg):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            fn(args, cfg)
+        except SystemExit:
+            pass
+    return buf.getvalue()
+
+
+def cfg_for(root):
+    return {{'projects': [{{'name': 'p', 'root': str(root),
+                           'ledger': str(root / 'TASKS.local.md')}}], 'scope': 'all'}}
+
+
+ns = argparse.Namespace(project=None, scope='all', base=None)
+
+# Neither state is a fault, and neither can be cleared by naming a base branch -- so
+# neither may demand one. A `doctor` that fails over something with no available fix
+# teaches the reader to skip its output.
+for root in (nogit, local):
+    rep = out_of(hey.cmd_doctor, ns, cfg_for(root))
+    assert 'FAIL' not in rep, (root.name, rep)
+    assert '--base' not in rep and 'Set "base"' not in rep, (root.name, rep)
+assert 'no remote' in out_of(hey.cmd_doctor, ns, cfg_for(local))
+assert 'not a git repository' in out_of(hey.cmd_doctor, ns, cfg_for(nogit))
+
+# Nothing to check is not the same as not checked, and the difference is the whole reason
+# this repository reports a `gh` that cannot answer instead of reading it as a zero.
+dirty_nogit = out_of(hey.cmd_dirty, ns, cfg_for(nogit))
+assert 'no commits to check' in dirty_nogit, dirty_nogit
+assert 'NOT checked' not in dirty_nogit, dirty_nogit
+dirty_local = out_of(hey.cmd_dirty, ns, cfg_for(local))
+assert 'nothing here can be pushed' in dirty_local, dirty_local
+assert 'NOT checked' not in dirty_local, dirty_local
+
+# And the one case that *is* a misconfiguration keeps its failure and its instruction: a
+# remote exists, so a base branch is a real thing to set and setting it really fixes this.
+git('remote', 'add', 'origin', str(d / 'bare'))
+broken = cfg_for(local)
+broken['projects'][0]['base'] = 'nope'
+rep = out_of(hey.cmd_doctor, ns, broken)
+assert 'FAIL' in rep and 'names no branch here' in rep, rep
+assert 'NOT checked' in out_of(hey.cmd_dirty, ns, broken)
+
+# The base is a ref, and `origin/` is one place to look for it. A repository with no remote
+# still has a branch work lands on, still accumulates commits that have not reached it, and
+# that count is the measure the hardcoded `origin/` prefix made unreachable.
+git('remote', 'remove', 'origin')
+git('checkout', '-q', '-b', 'feature')
+(local / 'b.txt').write_text('more')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'second')
+
+assert hey.base_ref(local, 'main') == 'main', hey.base_ref(local, 'main')
+assert hey.base_ref(local, 'nope') is None
+assert hey.default_base(local) == 'main', hey.default_base(local)
+ahead, ok_ = hey.ahead_of_base(local, 'main')
+assert ok_ and len(ahead) == 1, (ok_, ahead)
+
+live = cfg_for(local)
+live['projects'][0]['base'] = 'main'
+rep = out_of(hey.cmd_dirty, ns, live)
+# Counted, and labelled for what it is. `unpushed` would be every commit in the repository
+# and would never go down, so it is not asked here at all.
+assert 'not yet in main' in rep, rep
+assert 'never pushed' not in rep and 'NOT checked' not in rep, rep
+assert 'no remote' in rep, rep
+assert 'base main (local)' in out_of(hey.cmd_doctor, ns, live)
+
+# Registering the directory above the repository is an easy miss: a project whose code
+# lives in `Sources/` looks like the project from outside. `add` names what it finds and
+# stops there -- one project is one repository, and adopting one nobody asked for would
+# file its commits under a project that never held them.
+(nogit / 'node_modules' / 'pkg').mkdir(parents=True)
+(nogit / 'node_modules' / 'pkg' / '.git').mkdir()
+(nogit / '.hidden').mkdir()
+(nogit / '.hidden' / '.git').mkdir()
+assert hey.repos_below(d) == [local], hey.repos_below(d)
+# A vendored tree is full of repositories and none of them is the project. Neither is
+# anything under a dot-directory.
+assert hey.repos_below(nogit) == [], hey.repos_below(nogit)
+
+# A branch nobody named `main`. `default_base` guesses from three names and this is none of
+# them, so it finds nothing -- which is a thing to say, not a thing to fail over, and the
+# branch the user does have resolves the moment they name it.
+odd = d / 'odd'
+odd.mkdir()
+git('init', '-q', '-b', 'trunk', '.', cwd=odd)
+(odd / 'a.txt').write_text('a')
+git('add', '-A', cwd=odd)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=odd)
+(odd / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
+
+assert hey.default_base(odd) is None, hey.default_base(odd)
+rep = out_of(hey.cmd_doctor, ns, cfg_for(odd))
+assert 'FAIL' not in rep, rep
+assert 'no local `main`, `develop` or `master`' in rep, rep
+named = cfg_for(odd)
+named['projects'][0]['base'] = 'trunk'
+assert 'base trunk (local)' in out_of(hey.cmd_doctor, ns, named)
+
+# A remote exists, and the base names a branch only this machine has. It resolves to the
+# local one: the comparison works, so refusing it would withhold a measure over a prefix.
+git('remote', 'add', 'origin', str(d / 'bare'))
+git('branch', 'integration', 'main')
+side = cfg_for(local)
+side['projects'][0]['base'] = 'integration'
+rep = out_of(hey.cmd_doctor, ns, side)
+assert 'base integration' in rep and 'FAIL' not in rep, rep
+
+# And standing on that base, with everything on it absent from every remote. Resolving the
+# base was only half the question: `unpushed` used to derive its answer from `base..HEAD`,
+# which is empty on the base itself, so the count came back zero while no remote held a
+# single one of those commits. A false all-clear over the one state this tool exists to
+# surface, and worse than the "could not check" it replaced -- the earlier test asserted
+# the base resolved and never asked what was then reported.
+git('checkout', '-q', 'integration')
+for n in ('c', 'd'):
+    (local / (n + '.txt')).write_text(n)
+    git('add', '-A')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'never pushed ' + n)
+assert hey.unpushed(local, 'integration')[0] == 3, hey.unpushed(local, 'integration')
+rep = out_of(hey.cmd_dirty, ns, side)
+assert '3 commit(s) on a branch never pushed' in rep, rep
+assert 'nothing uncommitted or unpushed' not in rep, rep
+# Being the base branch is not a squash merge -- the trees match because it is the same
+# commit, and reading that as "already merged" is what zeroed the count.
+assert hey.already_merged(local, 'integration') is False
+git('checkout', '-q', 'feature')
+
+# With a remote in play, a branch that has never reached it is work at risk again -- the
+# wording `dirty` reserves for exactly that, and the one the no-remote case must never use.
+risky = out_of(hey.cmd_dirty, ns, live)
+assert 'on a branch never pushed' in risky, risky
+assert 'not yet in' not in risky, risky
+git('remote', 'remove', 'origin')
+"""
+
 AGE_MARK_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
 from hey import _blocker_age, display_width
@@ -1144,6 +1381,10 @@ def main() -> int:
             COMMIT_SPAN_PROBE.format(here=str(HERE), proj=str(proj)),
         "tokens are charged to a project by path, not by string prefix":
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
+        "no remote and no repository are answers, not faults":
+            NO_REMOTE_PROBE.format(here=str(HERE)),
+        "add names a repository below rather than adopting one":
+            ADD_PROBE.format(here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
@@ -1603,8 +1844,14 @@ def main() -> int:
          "--base", "trunk"], env, proj)
     code, out = run([hey, "add", str(split), "--name", "split", "--ledger", str(primary)],
                     env, proj)
+    # `trunk`, not `origin/trunk`: the config holds a branch name, and dressing it as a
+    # remote ref asserted that `origin/trunk` had been found when nothing had looked. The
+    # kept value is still reported -- saying "unresolved" would contradict the file this
+    # command just wrote -- with what can read it said separately.
     check("add: a re-add with no --base reports the base it kept, not `unresolved`",
-          code == 0 and "origin/trunk  (kept)" in out, out)
+          code == 0 and "trunk  (kept)" in out and "unresolved" not in out, out)
+    check("add: a kept base on a non-repository says nothing reads it",
+          "not a git repository, so nothing reads it" in out, out)
 
     # `git log --until <day> 23:59` means 23:59:00, so a commit made in the last minute of
     # the day fell outside it -- and the next day starts at 00:00, so it fell outside that
