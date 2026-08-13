@@ -12,6 +12,25 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### New
 
+- `open-items` prints every open item's own words, in ledger order, with nothing sorted and
+  nothing cut. `next` and `batch` both answer "what now", so both stop early; a question
+  about the shape of the whole plan needs the tail as well. Blocked items are marked, not
+  dropped.
+- `catalog` lists the plugins and skills the marketplaces on this machine offer and that are
+  not installed. **It matches nothing, ranks nothing and installs nothing** — `/hey-plan`
+  step 7 hands the list and the plan to the model, which is the only party that can read a
+  Korean item against an English description. An earlier attempt scored plan words against
+  plugin tags and produced zero suggestions from every ledger it saw: 2 of 291 catalogue
+  entries carry a `keywords` list, so there was nothing to score. All 291 carry a
+  description.
+- `/hey-plan` gained step 7, which runs both, once, after the items land — never daily and
+  never weekly. Two suggestions at most, each quoting the ledger item that produced it and
+  naming the marketplace it came from, and each saying the description is the vendor's own.
+  Nothing fitting is the ordinary outcome and is reported in one line rather than in
+  silence, which is indistinguishable from a broken step.
+- `CLAUDE_CONFIG_DIR` is honoured when locating marketplaces, so the catalogue and the host
+  do not describe two different machines.
+
 - **A base branch is a ref, and `origin/` is one place to look for it.** Every comparison
   used to spell the remote copy into the name, so a repository without a remote could not
   resolve a base at all — even though it still has a branch work lands on, and still

@@ -2274,6 +2274,228 @@ def cmd_import_tasks(args, cfg):
     print("\n".join(out))
 
 
+def cmd_open_items(args, cfg):
+    """Every open item's own words, whole and unranked. The input side of a capability match.
+
+    `next` and `batch` both answer "what should I do now", so both are sorted and cut short.
+    A question about the *shape of the plan* needs the opposite: all of it, in ledger order,
+    with nothing dropped -- what gets cut is exactly what a suggestion would have keyed on.
+
+    This exists so the reading is reproducible. A model matching against whatever the
+    conversation happens to hold cannot be asked why it said what it said, and gives two
+    answers for one ledger. Blocked items are printed and marked rather than filtered:
+    waiting on an external console is a fact about the plan, and dropping it silently would
+    hide the part most likely to want a capability.
+    """
+    for p, led in _each(args, cfg):
+        rows = [i for i in led.items if Ledger.state(i) != S.DONE]
+        blocked = {b["key"] for b in led.blockers()}
+        print(f"[{p['name']}] {len(rows)} open item(s)")
+        for it in rows:
+            mark = " [blocked]" if led.key(it) in blocked else ""
+            text = Ledger.MARKERS.sub("", it["text"]).replace("**", "").strip()
+            print(f"  {it['phase']}{mark} {text}")
+
+
+PLUGIN_ROW = re.compile(r"^\s*❯\s*([\w.-]+)@([\w.-]+)")
+# The host keeps its plugins wherever it was told to. Read from the same variable the host
+# reads, for the same reason `board.py` takes `HEY_TRANSCRIPTS`: a path written into the
+# source is right until somebody moves it, and then it is silently empty rather than wrong
+# out loud. Scanning the default tree while `claude` answers from another one produces a
+# catalogue and an installed list that describe two different machines.
+CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+MARKETPLACES = CLAUDE_HOME / "plugins" / "marketplaces"
+# `description:` with the text on the lines below is as valid as `description: >`, so the
+# value is allowed to be empty here. Requiring a character meant that shape matched nothing,
+# and the skill then dropped out of the catalogue with no description and no complaint.
+FRONT = re.compile(r"^(name|description):\s*(.*?)\s*$")
+
+
+def installed_plugins():
+    """`{'name@marketplace', ...}` from the host CLI, or **None** when it could not be asked.
+
+    None and the empty set are different answers and the caller has to tell them apart: an
+    empty set means the host answered and has nothing installed, None means nobody answered.
+    Folding the second into the first would filter nothing while reporting that it had, and
+    this repository already settled that argument once -- `pr-sync` reports a `gh` that
+    cannot answer rather than reading it as zero markers.
+
+    Keyed by `name@marketplace`, not by name. Two marketplaces are free to ship a
+    `code-review`, and matching on the bare name marks the one you do not have as installed
+    because of the one you do.
+    """
+    if not shutil.which("claude"):
+        return None
+    p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
+                       # A CLI that reads stdin and inherits a terminal blocks forever, and
+                       # this one is most often run from inside a session that has one.
+                       stdin=subprocess.DEVNULL)
+    if p.returncode != 0:
+        return None
+    return {f"{m[1]}@{m[2]}" for ln in p.stdout.split("\n") if (m := PLUGIN_ROW.match(ln))}
+
+
+def _front(path: Path) -> dict:
+    """`name` and `description` from a SKILL.md front matter block.
+
+    Folded scalars are joined rather than skipped. `description: >` followed by indented
+    lines is the common shape, and taking the marker line at face value stores `>` as the
+    description -- which reads as a skill nobody described, when in fact the description is
+    the next four lines. This is not YAML parsing, and does not try to be: two keys, one
+    fold, no dependencies.
+    """
+    got, key = {}, None
+    try:
+        with path.open(encoding="utf-8") as fh:
+            if fh.readline().strip() != "---":
+                return {}
+            for _ in range(40):
+                ln = fh.readline()
+                if not ln or ln.strip() == "---":
+                    break
+                if m := FRONT.match(ln):
+                    key = m[1]
+                    got[key] = "" if m[2] in (">", "|", ">-", "|-") else m[2].strip("\"'")
+                elif key and ln[:1].isspace() and ln.strip():
+                    got[key] = (got[key] + " " + ln.strip()).strip()
+                elif ln.strip():
+                    key = None
+    except OSError:
+        return {}
+    return got
+
+
+def catalogue(have) -> list:
+    """Every capability this machine can see, as `(kind, name, plugin, marketplace, desc)`.
+
+    Read from the marketplaces already configured here, never written down in this file. A
+    table of tools-you-might-like baked into the source is wrong the week a name changes,
+    cannot know what this user has access to, and is the same mistake as a hard-coded
+    price: a fact nobody checked, printed as though somebody had.
+
+    **Nothing is matched here.** An earlier version of this scored the plan's words against
+    plugin tags and shipped zero suggestions from three ledgers, because the tags do not
+    exist -- 2 of 291 entries carry a `keywords` list. What every entry does carry is a
+    prose description, and reading prose against a plan written in another language is the
+    model's job, not a regex's. So this hands over the catalogue and stops. The list it
+    returns is also the bound: the model may name what is in here and nothing else.
+
+    **The plugin and the marketplace are separate columns because they are separate facts.**
+    A skill arrives inside a plugin, which arrives from a marketplace; collapsing them into
+    one `source` gave skill rows a plugin name where the reader was told to expect a
+    marketplace, and `install this` then pointed at something that does not exist under that
+    name. The skill is instructed to attribute every suggestion, so the attribution has to
+    be true in both halves.
+
+    `have` is `None` when the host CLI could not be asked, and nothing is filtered then --
+    saying "not installed" about a machine nobody consulted is a claim, not a default.
+
+    Skills are only as complete as the clone on disk. A marketplace manifest lists plugins
+    without shipping them, so a plugin's skills are invisible until it is installed -- the
+    count is printed for that reason, rather than letting a short list read as a full one.
+    """
+    out = []
+    for man in sorted(MARKETPLACES.glob("*/.claude-plugin/marketplace.json")):
+        mkt = man.parent.parent
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        listed = [p.get("name") for p in data.get("plugins", []) if p.get("name")]
+        for p in data.get("plugins", []):
+            name, desc = p.get("name"), (p.get("description") or "").strip()
+            if name and (have is None or f"{name}@{mkt.name}" not in have):
+                out.append(("plugin", name, name, mkt.name, desc))
+        for sk in sorted(mkt.rglob("skills/*/SKILL.md")) + sorted(mkt.glob("*/SKILL.md")):
+            f = _front(sk)
+            if not f.get("description"):
+                continue
+            owner = sk.parent.parent
+            while owner != mkt and not (owner / ".claude-plugin" / "plugin.json").exists():
+                owner = owner.parent
+            # A skill that walks all the way up to the marketplace root has no manifest of
+            # its own to name an owner. Two things still can: the directory it sits in, when
+            # that matches a plugin the marketplace lists, and failing that a marketplace
+            # shipping exactly one plugin, which leaves nothing to be ambiguous about.
+            # Neither holds -- the owner is unknown and says so, rather than being
+            # attributed to the marketplace, which is not a thing anybody can install.
+            if owner != mkt:
+                plug = owner.name
+            elif sk.parent.name in listed:
+                plug = sk.parent.name
+            else:
+                plug = listed[0] if len(listed) == 1 else None
+            if have is None or plug is None or f"{plug}@{mkt.name}" not in have:
+                out.append(("skill", f.get("name") or sk.parent.name, plug, mkt.name,
+                            f["description"]))
+    # Keyed by marketplace as well, because two marketplaces may each ship a `code-review`
+    # and they are not the same plugin. Collapsing them kept whichever directory sorted
+    # first and attributed it to that marketplace, which is the one fact the reader was told
+    # to weigh.
+    seen, uniq = set(), []
+    for row in out:
+        if row[:2] + row[3:4] not in seen:
+            seen.add(row[:2] + row[3:4])
+            uniq.append(row)
+    return uniq
+
+
+def cmd_catalog(args, cfg):
+    """Capabilities this machine offers and does not already have installed. Suggests nothing.
+
+    This prints a catalogue. It does not read the ledger, does not rank, and does not
+    decide that anything here is worth having -- `/hey-plan` hands this list and the plan
+    to the model, which is the only party that can read a Korean item against an English
+    description. Keeping the judgement out of here is deliberate: the judgement is the part
+    that has to be checkable, and a score computed in Python looks settled in a way it has
+    not earned.
+
+    Nothing is installed, enabled or configured, here or anywhere it is called from.
+    """
+    have = None if args.all else installed_plugins()
+    rows, missing = catalogue(have), []
+    if args.show:
+        # Second stage. Names come from the first stage's own output, so this cannot be
+        # asked about something that was never offered -- and a name that reaches here and
+        # matches nothing is reported rather than dropped, because the caller believed it
+        # existed and needs to be told it does not.
+        want = {n.lower() for n in args.show}
+        rows = [r for r in rows if r[1].lower() in want]
+        missing = sorted(want - {r[1].lower() for r in rows})
+
+    # Three states, said apart. `have` empty is a host that answered and has nothing
+    # installed; `have` None is a host that could not be asked, and filtering did not
+    # happen. Printing one sentence for both told a healthy machine with no plugins that it
+    # had no CLI, and told a broken CLI that its answer had been used.
+    if args.all:
+        head = "everything the marketplaces list, installed or not"
+    elif have is None:
+        head = "**could not ask what is installed** -- nothing is filtered out"
+    else:
+        head = f"not installed, out of {len(have)} installed"
+    kinds = {k: sum(1 for r in rows if r[0] == k) for k in ("plugin", "skill")}
+    print(f"[catalog] {kinds['plugin']} plugin(s), {kinds['skill']} skill(s) — {head}")
+    for miss in missing:
+        # Named and not found. Said out loud, because the caller asked about this by name
+        # and silence here reads as "it exists but has nothing to say".
+        print(f"  not in the catalogue: {miss}")
+    for kind, name, plug, mkt, desc in rows:
+        # Plugin and marketplace both, always. `skill X (plugin Y)` alone reads as a
+        # marketplace named Y to anyone following the attribution rule, and there is no
+        # such marketplace to go and look at.
+        where = mkt if kind == "plugin" else f"{plug or 'plugin unknown'} @ {mkt}"
+        if args.names:
+            # A tenth of the payload. Enough to shortlist from -- `firebase`, `pyright-lsp`
+            # and `plugin-dev` say what they are -- with `--show` pulling the descriptions
+            # that actually decide it. Reading 321 descriptions to reject 315 is the cost
+            # this exists to avoid.
+            print(f"{kind[0]} {name} ({where})")
+        else:
+            # Whole description when a name was asked for, because that is the answer being
+            # asked for. Clipped in the full listing, where 321 untrimmed entries bury it.
+            print(f"  {kind:6} {name} ({where}) — {desc if args.show else desc[:100]}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="hey.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2352,6 +2574,19 @@ def main() -> None:
     sp = add("import-tasks", cmd_import_tasks,
              help="a spec-kit tasks.md as ledger items. Prints, never writes")
     sp.add_argument("path", help="path to tasks.md")
+    scoped(add("open-items", cmd_open_items,
+               help="every open item's own words, unranked and uncut"))
+    # Not `scoped`: the catalogue is a property of this machine, not of a ledger. It takes
+    # no project because it reads none -- the matching happens in the skill, with the
+    # ledger the skill already has open.
+    sp = add("catalog", cmd_catalog,
+             help="capabilities available here and not installed. Prints; never installs")
+    sp.add_argument("--all", action="store_true",
+                    help="include what is already installed")
+    sp.add_argument("--names", action="store_true",
+                    help="names and sources only, to shortlist from")
+    sp.add_argument("--show", nargs="+", metavar="NAME",
+                    help="full entries for these names, to decide on a shortlist")
     sp = scoped(add("draft-log", cmd_draft_log,
                     help="work-log entries drafted from git history. Prints, never writes"))
     sp.add_argument("--since", type=int, default=14, help="how many days back")

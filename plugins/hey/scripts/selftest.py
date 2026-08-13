@@ -839,6 +839,177 @@ assert 'not yet in' not in risky, risky
 git('remote', 'remove', 'origin')
 """
 
+CATALOG_PROBE = """
+import json, sys, tempfile; sys.path.insert(0, {here!r})
+from pathlib import Path
+import hey
+
+d = Path(tempfile.mkdtemp())
+mkt = d / 'somewhere'
+(mkt / '.claude-plugin').mkdir(parents=True)
+(mkt / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'already-here', 'description': 'installed, so it needs no suggesting'}},
+    {{'name': 'not-here', 'description': 'a thing this machine offers'}},
+]}}), encoding='utf-8')
+
+# A plugin ships its skills inside itself, and the description carries the words worth
+# matching on. `description: >` with the text on the lines below is the ordinary shape --
+# reading the marker line at face value files the skill under a description of `>`, which
+# is a skill nobody can match against and looks like one nobody described.
+sk = mkt / 'not-here' / 'skills' / 'folded'
+sk.mkdir(parents=True)
+(mkt / 'not-here' / '.claude-plugin').mkdir()
+(mkt / 'not-here' / '.claude-plugin' / 'plugin.json').write_text('{{}}', encoding='utf-8')
+(sk / 'SKILL.md').write_text('---' + chr(10) + 'name: folded' + chr(10)
+                             + 'description: >' + chr(10)
+                             + '  Reads Firestore security rules and' + chr(10)
+                             + '  writes the regression tests for them.' + chr(10)
+                             + '---' + chr(10), encoding='utf-8')
+
+# `description:` with the text on the lines below is as valid as the folded form, and used
+# to parse to no description at all -- which dropped the skill out of the catalogue with no
+# error. The catalogue is the bound on what may be named, so a silent omission here makes a
+# real capability permanently unnameable.
+bare = mkt / 'not-here' / 'skills' / 'bare'
+bare.mkdir(parents=True)
+(bare / 'SKILL.md').write_text('---' + chr(10) + 'name: bare' + chr(10)
+                               + 'description:' + chr(10)
+                               + '  Deploys the widget extension.' + chr(10)
+                               + '---' + chr(10), encoding='utf-8')
+
+hey.MARKETPLACES = mkt.parent
+rows = hey.catalogue({{'already-here@somewhere'}})
+names = {{n for _, n, _, _, _ in rows}}
+# What is installed needs no suggestion, and saying "you have this" every run is the
+# advertisement the whole command exists to avoid.
+assert 'already-here' not in names, names
+assert {{'not-here', 'folded', 'bare'}} <= names, names
+
+desc = {{n: v for _, n, _, _, v in rows}}
+assert desc['folded'].startswith('Reads Firestore'), desc['folded']
+assert 'regression tests' in desc['folded'], desc['folded']
+assert desc['bare'] == 'Deploys the widget extension.', desc['bare']
+
+# Plugin and marketplace are separate columns because they are separate facts. A skill row
+# carrying its plugin where the reader was told to expect a marketplace sends them looking
+# for a marketplace that does not exist.
+assert [(p, m) for k, n, p, m, _ in rows if n == 'folded'] == [('not-here', 'somewhere')]
+assert [(p, m) for k, n, p, m, _ in rows if n == 'not-here'] == [('not-here', 'somewhere')]
+
+# And a plugin whose own skills are visible is filtered out whole -- the skills go with it.
+# Offering a skill out of something already installed is the same advertisement, one level
+# down, and the harder one to notice.
+left = hey.catalogue({{'not-here@somewhere'}})
+assert {{n for _, n, _, _, _ in left}} == {{'already-here'}}, left
+
+# A second marketplace shipping the same plugin name. They are two different plugins, and
+# keeping only the one whose directory sorts first hands the reader an attribution for a
+# thing they did not look at -- which is the one fact the skill is told to pass on.
+mkt2 = d / 'elsewhere'
+(mkt2 / '.claude-plugin').mkdir(parents=True)
+(mkt2 / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'not-here', 'description': 'same name, different author, different thing'}},
+]}}), encoding='utf-8')
+
+both = [(m, v) for k, n, p_, m, v in hey.catalogue(None) if n == 'not-here']
+assert sorted(m for m, _ in both) == ['elsewhere', 'somewhere'], both
+assert {{v for m, v in both if m == 'elsewhere'}} == {{'same name, different author, different thing'}}
+
+# Installed is keyed by name *and* marketplace. The same name in another marketplace is a
+# different plugin, and marking it installed hides something the user does not have.
+other = hey.catalogue({{'not-here@elsewhere'}})
+assert {{'not-here', 'folded', 'bare'}} <= {{n for _, n, _, _, _ in other}}, other
+assert [m for k, n, p_, m, _ in other if n == 'not-here'] == ['somewhere'], other
+
+# Nobody could be asked, so nothing is filtered -- calling something "not installed" on a
+# machine that was never consulted is a claim, not a default. Which of the two it was is
+# said by the command, not decided here.
+assert 'already-here' in {{n for _, n, _, _, _ in hey.catalogue(None)}}
+"""
+
+CATALOG_CMD_PROBE = """
+import argparse, contextlib, io, json, os, sys, tempfile
+from pathlib import Path
+
+d = Path(tempfile.mkdtemp())
+# Set before the import, because the host reads this variable and so must we. A path fixed
+# in the source scans the default tree while `claude` answers from another one, and the two
+# then describe different machines with nothing on screen to say so.
+os.environ['CLAUDE_CONFIG_DIR'] = str(d)
+sys.path.insert(0, {here!r})
+import hey
+
+assert hey.MARKETPLACES == d / 'plugins' / 'marketplaces', hey.MARKETPLACES
+real_installed = hey.installed_plugins
+
+mkt = hey.MARKETPLACES / 'somewhere'
+(mkt / '.claude-plugin').mkdir(parents=True)
+(mkt / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({{'plugins': [
+    {{'name': 'offered', 'description': 'a thing this machine offers'}},
+]}}), encoding='utf-8')
+
+
+def run(**kw):
+    args = argparse.Namespace(all=False, names=False, show=None)
+    for k, v in kw.items():
+        setattr(args, k, v)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        hey.cmd_catalog(args, {{}})
+    return buf.getvalue()
+
+
+# Three states, and each says which one it is. Reporting "nothing is installed" for a host
+# that could not be asked filters nothing while claiming it did, and this repository already
+# settled the same argument for `gh`.
+hey.installed_plugins = lambda: None
+assert 'could not ask' in run(), run()
+hey.installed_plugins = lambda: set()
+assert 'out of 0 installed' in run(), run()
+assert 'could not ask' not in run(), run()
+hey.installed_plugins = lambda: {{'offered@somewhere'}}
+assert 'out of 1 installed' in run(), run()
+
+# A name that matches nothing is reported on **every** path a caller uses. It was computed
+# and then dropped on the two machine-readable ones, which are the two the skill actually
+# runs -- so a typo came back as an empty result indistinguishable from a real absence.
+hey.installed_plugins = lambda: set()
+for form in ({{}}, {{'names': True}}):
+    out = run(show=['offered', 'nonesuch'], **form)
+    assert 'not in the catalogue: nonesuch' in out, (form, out)
+    assert 'offered' in out, (form, out)
+
+# And the same three states at their source, with a real subprocess rather than a stand-in.
+# Patching `installed_plugins` tests how the command reads the answer; nothing there notices
+# if the function itself turns a crashed host into an empty set.
+bin_dir = d / 'bin'
+bin_dir.mkdir()
+os.environ['PATH'] = str(bin_dir) + os.pathsep + os.environ['PATH']
+fake = bin_dir / 'claude'
+
+
+def host(body, code):
+    fake.write_text('#!/bin/sh' + chr(10) + body + chr(10) + 'exit ' + str(code) + chr(10))
+    fake.chmod(0o755)
+
+
+# The real one, kept from before the stand-ins above replaced the name on the module.
+hey.installed_plugins = real_installed
+
+
+host('echo "  \\u276f one@mkt-a"; echo "  \\u276f two@mkt-b"', 0)
+assert hey.installed_plugins() == {{'one@mkt-a', 'two@mkt-b'}}, hey.installed_plugins()
+# The marketplace half is kept. Dropping it marks `code-review` from a marketplace you do
+# not have as installed, on the strength of one you do.
+host('echo "  \\u276f code-review@mine"', 0)
+assert hey.installed_plugins() == {{'code-review@mine'}}, hey.installed_plugins()
+
+host('echo "config is broken" >&2', 1)
+assert hey.installed_plugins() is None, hey.installed_plugins()
+host('true', 0)
+assert hey.installed_plugins() == set(), hey.installed_plugins()
+"""
+
 AGE_MARK_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
 from hey import _blocker_age, display_width
@@ -1385,6 +1556,10 @@ def main() -> int:
             NO_REMOTE_PROBE.format(here=str(HERE)),
         "add names a repository below rather than adopting one":
             ADD_PROBE.format(here=str(HERE)),
+        "the catalogue skips what is installed and reads a folded description":
+            CATALOG_PROBE.format(here=str(HERE)),
+        "catalog says whether it could ask, and reports a name it does not have":
+            CATALOG_CMD_PROBE.format(here=str(HERE)),
     }
 
     # Third entry, when present, is a substring the output must contain. These assertions
@@ -1412,6 +1587,15 @@ def main() -> int:
         # print "these can run in parallel", overruling its own skill.
         ([hey, "batch"], "batch: reports absent evidence, not a parallel-safe verdict",
          "no overlap evidence in the item text"),
+        # The input side of a capability match. `next` and `batch` both cut their lists
+        # short because they answer "what now"; a question about the shape of the plan has
+        # to see the tail as well, and the tail is where an unusual item lives.
+        ([hey, "open-items"], "open-items: reaches past where next and batch stop",
+         "Not yet"),
+        ([hey, "open-items"], "open-items: a blocked item is marked rather than dropped",
+         "[blocked] Marked elsewhere"),
+        ([hey, "open-items"], "open-items: a closed item is not part of the plan",
+         "10 open item(s)"),
         ([hey, "context", "--date", today], "context"),
         ([board, "collect", "--date", yesterday], "collect (yesterday)", "baseline"),
         ([board, "collect", "--date", today], "collect (today)"),
