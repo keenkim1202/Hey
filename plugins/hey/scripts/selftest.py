@@ -684,6 +684,10 @@ git('init', '-q', '-b', 'main', '.')
 (local / 'a.txt').write_text('hi')
 git('add', '-A')
 git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first')
+# A real one, so `origin` can be pushed to later. Adding a remote that points at nothing is
+# enough to answer "is there a remote", and every check up to here only needs that -- but a
+# branch that has actually reached a remote is a different state, and it cannot be faked.
+git('init', '-q', '--bare', str(d / 'bare'), cwd=d)
 
 for p in (nogit, local):
     (p / 'TASKS.local.md').write_text('# ledger' + chr(10) + chr(10) + '## P0. Phase (0 MD / AI 0)'
@@ -795,6 +799,22 @@ git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=o
 (odd / 'TASKS.local.md').write_text('# ledger' + chr(10), encoding='utf-8')
 
 assert hey.default_base(odd) is None, hey.default_base(odd)
+
+# Every remote candidate before any local one. Asking per candidate mixed the tiers, so a
+# repository integrating on a remote `develop` while keeping a stale local `main` answered
+# `main` -- and then counted every report against a branch nobody merges into.
+tier = d / 'tier'
+tier.mkdir()
+git('init', '-q', '-b', 'main', '.', cwd=tier)
+(tier / 'a.txt').write_text('a')
+git('add', '-A', cwd=tier)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=tier)
+git('init', '-q', '--bare', str(d / 'tier-bare'), cwd=tier)
+git('remote', 'add', 'origin', str(d / 'tier-bare'), cwd=tier)
+git('checkout', '-q', '-b', 'develop', cwd=tier)
+git('push', '-q', '-u', 'origin', 'develop', cwd=tier)
+git('checkout', '-q', 'main', cwd=tier)
+assert hey.default_base(tier) == 'develop', hey.default_base(tier)
 rep = out_of(hey.cmd_doctor, ns, cfg_for(odd))
 assert 'FAIL' not in rep, rep
 assert 'no local `main`, `develop` or `master`' in rep, rep
@@ -829,6 +849,20 @@ assert 'nothing uncommitted or unpushed' not in rep, rep
 # Being the base branch is not a squash merge -- the trees match because it is the same
 # commit, and reading that as "already merged" is what zeroed the count.
 assert hey.already_merged(local, 'integration') is False
+
+# Nor is an add and its revert on a **tracked** branch. The net tree matches the base, but
+# those commits are history no remote holds, and the squash-merge exemption is for a branch
+# that never reached a remote in the first place.
+git('checkout', '-q', '-b', 'tracked')
+git('push', '-q', '-u', 'origin', 'tracked')
+(local / 'e.txt').write_text('e')
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add e')
+(local / 'e.txt').unlink()
+git('add', '-A')
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'revert e')
+assert hey.already_merged(local, 'tracked') is True, 'the net tree does match'
+assert hey.unpushed(local, 'tracked') == (2, True), hey.unpushed(local, 'tracked')
 git('checkout', '-q', 'feature')
 
 # With a remote in play, a branch that has never reached it is work at risk again -- the

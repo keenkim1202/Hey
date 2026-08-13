@@ -301,9 +301,16 @@ def default_base(root: Path) -> str | None:
     ref = _sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
     if ref.startswith("origin/"):
         return ref[len("origin/"):]
-    for cand in ("main", "develop", "master"):
-        if base_ref(root, cand):
-            return cand
+    # Every remote candidate before any local one. Asking `base_ref` per candidate mixes
+    # the two tiers: it answers "remote or local `main`" before anything has looked for
+    # `origin/develop`, so a repository integrating on a remote `develop` while keeping a
+    # stale local `main` silently starts counting against the wrong branch. Remote-first
+    # is what the docstring promises, and it has to be a pass, not a preference inside a
+    # per-candidate lookup.
+    for prefix in ("refs/remotes/origin/", "refs/heads/"):
+        for cand in ("main", "develop", "master"):
+            if _sh(["git", "rev-parse", "--verify", "--quiet", prefix + cand], root):
+                return cand
     return None
 
 
@@ -384,7 +391,15 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     up = _sh(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
              worktree)
     has_up = bool(up) and up != "@{upstream}"
-    if not has_remote(worktree) or already_merged(worktree, base):
+    if not has_remote(worktree):
+        return 0, has_up
+    # The squash-merge exemption belongs to a branch that never reached a remote: its
+    # commits are gone the day it is deleted, but its content is already in the base, so
+    # nagging about it is a false alarm. A **tracked** branch is a different case. Commits
+    # sitting past its upstream are history no remote holds, and suppressing them because
+    # the net tree happens to match the base -- an add and its revert, an empty commit --
+    # hands back the all-clear this function exists to withhold.
+    if not has_up and already_merged(worktree, base):
         return 0, has_up
     out = _sh(["git", "log", "--oneline", "HEAD", "--not", "--remotes"], worktree)
     return len([ln for ln in out.split("\n") if ln.strip()]), has_up
@@ -2428,10 +2443,11 @@ def catalogue(have) -> list:
             if have is None or plug is None or f"{plug}@{mkt.name}" not in have:
                 out.append(("skill", f.get("name") or sk.parent.name, plug, mkt.name,
                             f["description"]))
-    # Keyed by marketplace as well, because two marketplaces may each ship a `code-review`
-    # and they are not the same plugin. Collapsing them kept whichever directory sorted
-    # first and attributed it to that marketplace, which is the one fact the reader was told
-    # to weigh.
+    # Keyed by the plugin and the marketplace both, because neither alone identifies a row.
+    # Two marketplaces may each ship a `code-review`; two plugins inside one marketplace may
+    # each export a `deploy` skill. Dropping either half collapses distinct capabilities into
+    # whichever sorted first, and this list is the bound on what may be suggested -- so the
+    # loser is not merely mis-attributed, it becomes unnameable.
     seen, uniq = set(), []
     for row in out:
         if row[:2] + row[3:4] not in seen:
