@@ -1128,6 +1128,66 @@ host('true', 0)
 assert hey.installed_plugins() == set(), hey.installed_plugins()
 """
 
+
+BASE_DETECT_PROBE = """
+import subprocess, sys, tempfile; sys.path.insert(0, {here!r})
+from pathlib import Path
+import hey
+
+d = Path(tempfile.mkdtemp()).resolve()
+
+
+def git(*a, cwd):
+    subprocess.run(['git', *a], cwd=str(cwd), check=True, capture_output=True)
+
+
+# A default branch that is none of the three names guessed at, on a remote that is not
+# called `origin`. Both halves matter: the guess would have covered `main`, and the name
+# would have been read had it been `origin`.
+bare = d / 'src.git'
+git('init', '-q', '--bare', str(bare), cwd=d)
+git('symbolic-ref', 'HEAD', 'refs/heads/trunk', cwd=bare)
+work = d / 'work'
+work.mkdir()
+git('init', '-q', '-b', 'trunk', '.', cwd=work)
+(work / 'a.txt').write_text('hi')
+git('add', '-A', cwd=work)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=work)
+git('remote', 'add', 'origin', str(bare), cwd=work)
+git('push', '-q', 'origin', 'trunk', cwd=work)
+
+clone = d / 'clone'
+git('clone', '-q', '-o', 'upstream', str(bare), str(clone), cwd=d)
+assert hey.remotes(clone) == ['upstream'], hey.remotes(clone)
+
+# The repository records what it integrates on, and `base_ref` could already read it. The
+# detection in front of it asked only `origin`, so the answer git was holding one command
+# away came back as no base at all -- `doctor` failing over it, `dirty` declining to count,
+# and the offered fix asking the user to type a name the repository already knew.
+assert hey.base_ref(clone, 'trunk') == 'upstream/trunk', hey.base_ref(clone, 'trunk')
+assert hey.default_base(clone) == 'trunk', hey.default_base(clone)
+
+# `origin` still wins where a repository has both, because that is the one it means by
+# default -- and the order has to hold on the way in, not just once a name is known.
+git('remote', 'add', 'origin', str(bare), cwd=clone)
+git('fetch', '-q', 'origin', cwd=clone)
+git('remote', 'set-head', 'origin', 'trunk', cwd=clone)
+assert hey.remotes(clone)[0] == 'origin', hey.remotes(clone)
+assert hey.base_ref(clone, 'trunk') == 'origin/trunk', hey.base_ref(clone, 'trunk')
+
+# A repository that records nothing still gets the three-name guess, and a repository that
+# answers neither way stays None rather than picking something.
+plain = d / 'plain'
+plain.mkdir()
+git('init', '-q', '-b', 'develop', '.', cwd=plain)
+(plain / 'a.txt').write_text('hi')
+git('add', '-A', cwd=plain)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=plain)
+assert hey.default_base(plain) == 'develop', hey.default_base(plain)
+git('branch', '-m', 'develop', 'something-else', cwd=plain)
+assert hey.default_base(plain) is None, hey.default_base(plain)
+"""
+
 AGE_MARK_PROBE = """
 import sys, unicodedata; sys.path.insert(0, {here!r})
 from hey import _blocker_age, display_width
@@ -1672,6 +1732,8 @@ def main() -> int:
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
         "no remote and no repository are answers, not faults":
             NO_REMOTE_PROBE.format(here=str(HERE)),
+        "the default branch is read off whatever remote records it":
+            BASE_DETECT_PROBE.format(here=str(HERE)),
         "add names a repository below rather than adopting one":
             ADD_PROBE.format(here=str(HERE)),
         "the catalogue skips what is installed and reads a folded description":

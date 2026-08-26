@@ -241,8 +241,15 @@ def has_remote(root: Path) -> bool:
 
 
 def remotes(root: Path) -> list:
-    """Every remote this repository has, in the order git lists them."""
-    return [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
+    """Every remote this repository has, `origin` first.
+
+    The order is here rather than at the two call sites that need it, because they need the
+    same one for the same reason: `origin` is what a repository with several of them means
+    by default, and a lookup that asked them in whatever order git printed would answer
+    from a fork on one machine and from upstream on another for the same question.
+    """
+    names = [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
+    return [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
 
 
 def repos_below(root: Path, depth: int = 2) -> list:
@@ -295,12 +302,9 @@ def base_ref(root: Path, base: str | None) -> str | None:
     """
     if not base:
         return None
-    # `origin` first among remotes when it exists, since that is the one a repository with
-    # several means by default. Local last: a branch here can sit behind its remote copy
-    # without anyone noticing, so the copy wins wherever both exist.
-    names = remotes(root)
-    order = [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
-    for rem in order:
+    # Local last: a branch here can sit behind its remote copy without anyone noticing, so
+    # the copy wins wherever both exist. `remotes` supplies the order among the copies.
+    for rem in remotes(root):
         if _sh(["git", "rev-parse", "--verify", "--quiet",
                 f"refs/remotes/{rem}/{base}"], root):
             return f"{rem}/{base}"
@@ -319,10 +323,21 @@ def default_base(root: Path) -> str | None:
     Asked of the remote first and of the local branches second, so a repository that has
     never had a remote still resolves. A guess is only ever made from the three names that
     mean "this is where work lands"; anything else stays None.
+
+    **What a remote says beats what its branches look like.** A repository that records a
+    default branch has answered the question outright, and the three-name guess below is
+    only ever for one that has not.
     """
-    ref = _sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
-    if ref.startswith("origin/"):
-        return ref[len("origin/"):]
+    # Every remote, not just `origin`. A repository cloned with `-o upstream` records its
+    # default in `refs/remotes/upstream/HEAD` exactly as any other does, and asking only
+    # `origin` left it with no base at all: `doctor` failing over an answer git was holding
+    # one command away, `dirty` declining to count, and the fix on offer -- name a base
+    # branch -- asking the user to type what the repository already knew. `base_ref` stopped
+    # assuming the name; this line had not, and it is the one that runs first.
+    for rem in remotes(root):
+        ref = _sh(["git", "symbolic-ref", "--short", f"refs/remotes/{rem}/HEAD"], root)
+        if ref.startswith(f"{rem}/"):
+            return ref[len(rem) + 1:]
     # Every remote candidate before any local one. Asking `base_ref` per candidate mixes
     # the two tiers: it answers "remote or local `main`" before anything has looked for
     # `develop` on the remote, so a repository integrating on a remote `develop` while

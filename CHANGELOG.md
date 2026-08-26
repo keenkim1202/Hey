@@ -46,6 +46,13 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **The default branch is read off whatever remote records it, not off `origin`.** A
+  repository cloned with `-o upstream` writes its default into `refs/remotes/upstream/HEAD`
+  exactly as any other does, and the detection asked `origin` alone — so a repository
+  integrating on, say, `trunk` came back with no base at all. `doctor` then failed over an
+  answer git was holding one command away, `dirty` declined to count, and the offered fix
+  asked you to type a branch name the repository already knew. Every remote is asked now,
+  `origin` first where there is one.
 - **A repository with no remote no longer fails `doctor`.** It reported
   `origin/<base> does not exist` and told you to re-add with a base branch — which cannot
   help, because there is no remote for a base to live on. Every route through that check
