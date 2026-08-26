@@ -1155,6 +1155,32 @@ host('echo "config is broken" >&2', 1)
 assert hey.installed_plugins() is None, hey.installed_plugins()
 host('true', 0)
 assert hey.installed_plugins() == set(), hey.installed_plugins()
+
+# A host that never answers is bounded, because the person waiting on it cannot tell a slow
+# CLI from a stuck one by watching, and this runs inside a step of `/hey-plan`. The bound is
+# asserted rather than exercised: waiting out the real one to prove it exists would cost the
+# suite the very time the argument is about.
+import subprocess
+seen = {{}}
+real_run = subprocess.run
+
+
+def spy(cmd, **kw):
+    seen.update(kw)
+    return real_run(cmd, **kw)
+
+
+subprocess.run = spy
+hey.installed_plugins()
+assert isinstance(seen.get('timeout'), (int, float)), seen.get('timeout')
+
+# And running out of time is the same answer as a host that could not be asked. Reading it
+# as an empty set instead would report a machine with nothing installed and filter nothing
+# while saying it had -- the mistake this function's two states exist to prevent.
+subprocess.run = lambda cmd, **kw: (_ for _ in ()).throw(
+    subprocess.TimeoutExpired(cmd, kw.get('timeout', 0)))
+assert hey.installed_plugins() is None, 'a host that ran out of time is not an empty set'
+subprocess.run = real_run
 """
 
 

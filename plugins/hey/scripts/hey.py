@@ -2410,10 +2410,24 @@ def installed_plugins():
     """
     if not shutil.which("claude"):
         return None
-    p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
-                       # A CLI that reads stdin and inherits a terminal blocks forever, and
-                       # this one is most often run from inside a session that has one.
-                       stdin=subprocess.DEVNULL)
+    try:
+        p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
+                           # A CLI that reads stdin and inherits a terminal blocks forever,
+                           # and this one is most often run from inside a session that has
+                           # one.
+                           stdin=subprocess.DEVNULL,
+                           # Bounded, because the caller is a person waiting on a step of
+                           # `/hey-plan` and there is no way to tell a slow answer from no
+                           # answer by watching. Long enough that a cold CLI still makes it;
+                           # short enough that a hung one costs a wait, not the session.
+                           timeout=20)
+    # Every way of not getting an answer arrives here as the same thing. This function
+    # already draws the line that matters -- answered, or not asked -- and a timeout is on
+    # the second side of it, so nothing downstream needs to learn a third state. Turning it
+    # into an empty set instead would report a machine with nothing installed, and filter
+    # out nothing while saying it had.
+    except (OSError, subprocess.SubprocessError):
+        return None
     if p.returncode != 0:
         return None
     return {f"{m[1]}@{m[2]}" for ln in p.stdout.split("\n") if (m := PLUGIN_ROW.match(ln))}

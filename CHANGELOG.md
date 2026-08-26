@@ -57,6 +57,10 @@ Claude Code has these already; Codex receives them when the pinned version is ne
   clones, and a stray byte in any of them turned the whole catalogue into a traceback. A
   skill now keeps its row with the byte replaced, and a manifest that cannot be decoded
   drops its marketplace exactly as unparseable JSON already did — the rest still list.
+- **Asking the host what is installed is bounded.** `claude plugin list` had no time limit,
+  so a host that never answered hung `/hey-plan` with nothing on screen to say why. Running
+  out of time is now the same answer as a host that could not be asked — which filters
+  nothing and says so, rather than reporting a machine with nothing installed.
 - **A repository with no remote no longer fails `doctor`.** It reported
   `origin/<base> does not exist` and told you to re-add with a base branch — which cannot
   help, because there is no remote for a base to live on. Every route through that check
