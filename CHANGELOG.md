@@ -53,6 +53,10 @@ Claude Code has these already; Codex receives them when the pinned version is ne
   answer git was holding one command away, `dirty` declined to count, and the offered fix
   asked you to type a branch name the repository already knew. Every remote is asked now,
   `origin` first where there is one.
+- **One file that is not UTF-8 no longer takes down `catalog`.** These are other people's
+  clones, and a stray byte in any of them turned the whole catalogue into a traceback. A
+  skill now keeps its row with the byte replaced, and a manifest that cannot be decoded
+  drops its marketplace exactly as unparseable JSON already did — the rest still list.
 - **A repository with no remote no longer fails `doctor`.** It reported
   `origin/<base> does not exist` and told you to re-add with a base branch — which cannot
   help, because there is no remote for a base to live on. Every route through that check

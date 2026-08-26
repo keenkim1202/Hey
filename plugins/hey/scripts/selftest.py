@@ -992,6 +992,35 @@ assert desc['folded'].startswith('Reads Firestore'), desc['folded']
 assert 'regression tests' in desc['folded'], desc['folded']
 assert desc['bare'] == 'Deploys the widget extension.', desc['bare']
 
+# Bytes nobody here wrote. These files come out of other people's clones, and a decode
+# error propagating out of the reader took `catalog` down whole -- one stray byte in one
+# marketplace and the command was a traceback instead of a catalogue. The row survives
+# with a replacement character in it, which is a description; the alternative was no
+# catalogue at all.
+rough = mkt / 'not-here' / 'skills' / 'rough'
+rough.mkdir(parents=True)
+(rough / 'SKILL.md').write_bytes(
+    ('---' + chr(10) + 'name: rough' + chr(10)
+     + 'description: signs the caf' + chr(233) + ' build' + chr(10)
+     + '---' + chr(10)).encode('latin-1'))
+
+# And a manifest that cannot be decoded drops its marketplace exactly as unparseable JSON
+# already did -- the others still list. Losing one clone is a gap; losing the command is
+# the difference between a short catalogue and none.
+broken = d / 'unreadable'
+(broken / '.claude-plugin').mkdir(parents=True)
+(broken / '.claude-plugin' / 'marketplace.json').write_bytes(
+    ('{{"plugins": [{{"name": "caf' + chr(233) + '", "description": "x"}}]}}').encode('latin-1'))
+
+rows = hey.catalogue({{'already-here@somewhere'}})
+names = {{n for _, n, _, _, _ in rows}}
+assert 'rough' in names, names
+assert {{'not-here', 'folded', 'bare'}} <= names, names
+assert 'caf' + chr(233) not in names, names
+desc = {{n: v for _, n, _, _, v in rows}}
+assert desc['rough'].startswith('signs the caf'), desc['rough']
+assert desc['rough'].endswith(' build'), desc['rough']
+
 # Plugin and marketplace are separate columns because they are separate facts. A skill row
 # carrying its plugin where the reader was told to expect a marketplace sends them looking
 # for a marketplace that does not exist.

@@ -2427,10 +2427,16 @@ def _front(path: Path) -> dict:
     description -- which reads as a skill nobody described, when in fact the description is
     the next four lines. This is not YAML parsing, and does not try to be: two keys, one
     fold, no dependencies.
+
+    Bytes that are not UTF-8 are replaced rather than raised on. This reads one file out of
+    a few hundred that somebody else wrote and this machine merely has a copy of, and a
+    decode error propagating out of here took down `catalog` entirely -- one stray byte in
+    one clone, and the whole catalogue became a traceback. A description with a `?` in it
+    is still a description; a command that will not run is not a catalogue.
     """
     got, key = {}, None
     try:
-        with path.open(encoding="utf-8") as fh:
+        with path.open(encoding="utf-8", errors="replace") as fh:
             if fh.readline().strip() != "---":
                 return {}
             for _ in range(40):
@@ -2483,7 +2489,11 @@ def catalogue(have) -> list:
         mkt = man.parent.parent
         try:
             data = json.loads(man.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        # A manifest that cannot be decoded is skipped exactly as one that cannot be parsed
+        # already was -- the marketplace drops out, the rest of them still list. Naming
+        # `JSONDecodeError` alone let a non-UTF-8 manifest through as a `UnicodeDecodeError`
+        # and out of the command, which turned one unreadable clone into no catalogue at all.
+        except (OSError, ValueError):
             continue
         listed = [p.get("name") for p in data.get("plugins", []) if p.get("name")]
         for p in data.get("plugins", []):
