@@ -992,6 +992,35 @@ assert desc['folded'].startswith('Reads Firestore'), desc['folded']
 assert 'regression tests' in desc['folded'], desc['folded']
 assert desc['bare'] == 'Deploys the widget extension.', desc['bare']
 
+# Bytes nobody here wrote. These files come out of other people's clones, and a decode
+# error propagating out of the reader took `catalog` down whole -- one stray byte in one
+# marketplace and the command was a traceback instead of a catalogue. The row survives
+# with a replacement character in it, which is a description; the alternative was no
+# catalogue at all.
+rough = mkt / 'not-here' / 'skills' / 'rough'
+rough.mkdir(parents=True)
+(rough / 'SKILL.md').write_bytes(
+    ('---' + chr(10) + 'name: rough' + chr(10)
+     + 'description: signs the caf' + chr(233) + ' build' + chr(10)
+     + '---' + chr(10)).encode('latin-1'))
+
+# And a manifest that cannot be decoded drops its marketplace exactly as unparseable JSON
+# already did -- the others still list. Losing one clone is a gap; losing the command is
+# the difference between a short catalogue and none.
+broken = d / 'unreadable'
+(broken / '.claude-plugin').mkdir(parents=True)
+(broken / '.claude-plugin' / 'marketplace.json').write_bytes(
+    ('{{"plugins": [{{"name": "caf' + chr(233) + '", "description": "x"}}]}}').encode('latin-1'))
+
+rows = hey.catalogue({{'already-here@somewhere'}})
+names = {{n for _, n, _, _, _ in rows}}
+assert 'rough' in names, names
+assert {{'not-here', 'folded', 'bare'}} <= names, names
+assert 'caf' + chr(233) not in names, names
+desc = {{n: v for _, n, _, _, v in rows}}
+assert desc['rough'].startswith('signs the caf'), desc['rough']
+assert desc['rough'].endswith(' build'), desc['rough']
+
 # Plugin and marketplace are separate columns because they are separate facts. A skill row
 # carrying its plugin where the reader was told to expect a marketplace sends them looking
 # for a marketplace that does not exist.
@@ -1126,6 +1155,92 @@ host('echo "config is broken" >&2', 1)
 assert hey.installed_plugins() is None, hey.installed_plugins()
 host('true', 0)
 assert hey.installed_plugins() == set(), hey.installed_plugins()
+
+# A host that never answers is bounded, because the person waiting on it cannot tell a slow
+# CLI from a stuck one by watching, and this runs inside a step of `/hey-plan`. The bound is
+# asserted rather than exercised: waiting out the real one to prove it exists would cost the
+# suite the very time the argument is about.
+import subprocess
+seen = {{}}
+real_run = subprocess.run
+
+
+def spy(cmd, **kw):
+    seen.update(kw)
+    return real_run(cmd, **kw)
+
+
+subprocess.run = spy
+hey.installed_plugins()
+assert isinstance(seen.get('timeout'), (int, float)), seen.get('timeout')
+
+# And running out of time is the same answer as a host that could not be asked. Reading it
+# as an empty set instead would report a machine with nothing installed and filter nothing
+# while saying it had -- the mistake this function's two states exist to prevent.
+subprocess.run = lambda cmd, **kw: (_ for _ in ()).throw(
+    subprocess.TimeoutExpired(cmd, kw.get('timeout', 0)))
+assert hey.installed_plugins() is None, 'a host that ran out of time is not an empty set'
+subprocess.run = real_run
+"""
+
+
+BASE_DETECT_PROBE = """
+import subprocess, sys, tempfile; sys.path.insert(0, {here!r})
+from pathlib import Path
+import hey
+
+d = Path(tempfile.mkdtemp()).resolve()
+
+
+def git(*a, cwd):
+    subprocess.run(['git', *a], cwd=str(cwd), check=True, capture_output=True)
+
+
+# A default branch that is none of the three names guessed at, on a remote that is not
+# called `origin`. Both halves matter: the guess would have covered `main`, and the name
+# would have been read had it been `origin`.
+bare = d / 'src.git'
+git('init', '-q', '--bare', str(bare), cwd=d)
+git('symbolic-ref', 'HEAD', 'refs/heads/trunk', cwd=bare)
+work = d / 'work'
+work.mkdir()
+git('init', '-q', '-b', 'trunk', '.', cwd=work)
+(work / 'a.txt').write_text('hi')
+git('add', '-A', cwd=work)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=work)
+git('remote', 'add', 'origin', str(bare), cwd=work)
+git('push', '-q', 'origin', 'trunk', cwd=work)
+
+clone = d / 'clone'
+git('clone', '-q', '-o', 'upstream', str(bare), str(clone), cwd=d)
+assert hey.remotes(clone) == ['upstream'], hey.remotes(clone)
+
+# The repository records what it integrates on, and `base_ref` could already read it. The
+# detection in front of it asked only `origin`, so the answer git was holding one command
+# away came back as no base at all -- `doctor` failing over it, `dirty` declining to count,
+# and the offered fix asking the user to type a name the repository already knew.
+assert hey.base_ref(clone, 'trunk') == 'upstream/trunk', hey.base_ref(clone, 'trunk')
+assert hey.default_base(clone) == 'trunk', hey.default_base(clone)
+
+# `origin` still wins where a repository has both, because that is the one it means by
+# default -- and the order has to hold on the way in, not just once a name is known.
+git('remote', 'add', 'origin', str(bare), cwd=clone)
+git('fetch', '-q', 'origin', cwd=clone)
+git('remote', 'set-head', 'origin', 'trunk', cwd=clone)
+assert hey.remotes(clone)[0] == 'origin', hey.remotes(clone)
+assert hey.base_ref(clone, 'trunk') == 'origin/trunk', hey.base_ref(clone, 'trunk')
+
+# A repository that records nothing still gets the three-name guess, and a repository that
+# answers neither way stays None rather than picking something.
+plain = d / 'plain'
+plain.mkdir()
+git('init', '-q', '-b', 'develop', '.', cwd=plain)
+(plain / 'a.txt').write_text('hi')
+git('add', '-A', cwd=plain)
+git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first', cwd=plain)
+assert hey.default_base(plain) == 'develop', hey.default_base(plain)
+git('branch', '-m', 'develop', 'something-else', cwd=plain)
+assert hey.default_base(plain) is None, hey.default_base(plain)
 """
 
 AGE_MARK_PROBE = """
@@ -1672,6 +1787,8 @@ def main() -> int:
             TOKEN_SCOPE_PROBE.format(here=str(HERE)),
         "no remote and no repository are answers, not faults":
             NO_REMOTE_PROBE.format(here=str(HERE)),
+        "the default branch is read off whatever remote records it":
+            BASE_DETECT_PROBE.format(here=str(HERE)),
         "add names a repository below rather than adopting one":
             ADD_PROBE.format(here=str(HERE)),
         "the catalogue skips what is installed and reads a folded description":

@@ -241,8 +241,15 @@ def has_remote(root: Path) -> bool:
 
 
 def remotes(root: Path) -> list:
-    """Every remote this repository has, in the order git lists them."""
-    return [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
+    """Every remote this repository has, `origin` first.
+
+    The order is here rather than at the two call sites that need it, because they need the
+    same one for the same reason: `origin` is what a repository with several of them means
+    by default, and a lookup that asked them in whatever order git printed would answer
+    from a fork on one machine and from upstream on another for the same question.
+    """
+    names = [ln.strip() for ln in _sh(["git", "remote"], root).split("\n") if ln.strip()]
+    return [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
 
 
 def repos_below(root: Path, depth: int = 2) -> list:
@@ -295,12 +302,9 @@ def base_ref(root: Path, base: str | None) -> str | None:
     """
     if not base:
         return None
-    # `origin` first among remotes when it exists, since that is the one a repository with
-    # several means by default. Local last: a branch here can sit behind its remote copy
-    # without anyone noticing, so the copy wins wherever both exist.
-    names = remotes(root)
-    order = [n for n in names if n == "origin"] + [n for n in names if n != "origin"]
-    for rem in order:
+    # Local last: a branch here can sit behind its remote copy without anyone noticing, so
+    # the copy wins wherever both exist. `remotes` supplies the order among the copies.
+    for rem in remotes(root):
         if _sh(["git", "rev-parse", "--verify", "--quiet",
                 f"refs/remotes/{rem}/{base}"], root):
             return f"{rem}/{base}"
@@ -319,10 +323,21 @@ def default_base(root: Path) -> str | None:
     Asked of the remote first and of the local branches second, so a repository that has
     never had a remote still resolves. A guess is only ever made from the three names that
     mean "this is where work lands"; anything else stays None.
+
+    **What a remote says beats what its branches look like.** A repository that records a
+    default branch has answered the question outright, and the three-name guess below is
+    only ever for one that has not.
     """
-    ref = _sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
-    if ref.startswith("origin/"):
-        return ref[len("origin/"):]
+    # Every remote, not just `origin`. A repository cloned with `-o upstream` records its
+    # default in `refs/remotes/upstream/HEAD` exactly as any other does, and asking only
+    # `origin` left it with no base at all: `doctor` failing over an answer git was holding
+    # one command away, `dirty` declining to count, and the fix on offer -- name a base
+    # branch -- asking the user to type what the repository already knew. `base_ref` stopped
+    # assuming the name; this line had not, and it is the one that runs first.
+    for rem in remotes(root):
+        ref = _sh(["git", "symbolic-ref", "--short", f"refs/remotes/{rem}/HEAD"], root)
+        if ref.startswith(f"{rem}/"):
+            return ref[len(rem) + 1:]
     # Every remote candidate before any local one. Asking `base_ref` per candidate mixes
     # the two tiers: it answers "remote or local `main`" before anything has looked for
     # `develop` on the remote, so a repository integrating on a remote `develop` while
@@ -2395,10 +2410,24 @@ def installed_plugins():
     """
     if not shutil.which("claude"):
         return None
-    p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
-                       # A CLI that reads stdin and inherits a terminal blocks forever, and
-                       # this one is most often run from inside a session that has one.
-                       stdin=subprocess.DEVNULL)
+    try:
+        p = subprocess.run(["claude", "plugin", "list"], capture_output=True, text=True,
+                           # A CLI that reads stdin and inherits a terminal blocks forever,
+                           # and this one is most often run from inside a session that has
+                           # one.
+                           stdin=subprocess.DEVNULL,
+                           # Bounded, because the caller is a person waiting on a step of
+                           # `/hey-plan` and there is no way to tell a slow answer from no
+                           # answer by watching. Long enough that a cold CLI still makes it;
+                           # short enough that a hung one costs a wait, not the session.
+                           timeout=20)
+    # Every way of not getting an answer arrives here as the same thing. This function
+    # already draws the line that matters -- answered, or not asked -- and a timeout is on
+    # the second side of it, so nothing downstream needs to learn a third state. Turning it
+    # into an empty set instead would report a machine with nothing installed, and filter
+    # out nothing while saying it had.
+    except (OSError, subprocess.SubprocessError):
+        return None
     if p.returncode != 0:
         return None
     return {f"{m[1]}@{m[2]}" for ln in p.stdout.split("\n") if (m := PLUGIN_ROW.match(ln))}
@@ -2412,10 +2441,16 @@ def _front(path: Path) -> dict:
     description -- which reads as a skill nobody described, when in fact the description is
     the next four lines. This is not YAML parsing, and does not try to be: two keys, one
     fold, no dependencies.
+
+    Bytes that are not UTF-8 are replaced rather than raised on. This reads one file out of
+    a few hundred that somebody else wrote and this machine merely has a copy of, and a
+    decode error propagating out of here took down `catalog` entirely -- one stray byte in
+    one clone, and the whole catalogue became a traceback. A description with a `?` in it
+    is still a description; a command that will not run is not a catalogue.
     """
     got, key = {}, None
     try:
-        with path.open(encoding="utf-8") as fh:
+        with path.open(encoding="utf-8", errors="replace") as fh:
             if fh.readline().strip() != "---":
                 return {}
             for _ in range(40):
@@ -2468,7 +2503,11 @@ def catalogue(have) -> list:
         mkt = man.parent.parent
         try:
             data = json.loads(man.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        # A manifest that cannot be decoded is skipped exactly as one that cannot be parsed
+        # already was -- the marketplace drops out, the rest of them still list. Naming
+        # `JSONDecodeError` alone let a non-UTF-8 manifest through as a `UnicodeDecodeError`
+        # and out of the command, which turned one unreadable clone into no catalogue at all.
+        except (OSError, ValueError):
             continue
         listed = [p.get("name") for p in data.get("plugins", []) if p.get("name")]
         for p in data.get("plugins", []):
