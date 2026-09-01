@@ -20,12 +20,22 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    # Not POSIX. The lock below turns into nothing rather than taking every command with
+    # it: a platform that has never been supported should degrade to what it had, which
+    # was no locking at all, not to a script that fails on import.
+    fcntl = None
 
 HOME = Path(os.environ.get("HEY_HOME", Path.home() / ".hey"))
 CONFIG = HOME / "config.json"
 STATS = HOME / "stats.jsonl"
+LOCK = HOME / ".lock"
 TEMPLATES = Path(__file__).parent.parent / "templates"
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -997,26 +1007,59 @@ def write_stats(rows: list[dict]) -> None:
     write_atomic(STATS, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
 
 
+@contextmanager
+def exclusive():
+    """Hold `~/.hey/.lock` for the length of one read-modify-write of `stats.jsonl`.
+
+    `write_atomic` stops a reader seeing half a file. It does nothing about two writers.
+    `merge_stats` reads the whole history, edits one row and writes all of it back, so two
+    of them overlapping means the second one rewrites the copy it read before the first
+    one landed, and the first one's day is gone with no trace that it was ever there.
+
+    That is the ordinary shape here rather than the unlucky one. Every worktree of a
+    project is its own session, and this tool exists partly because several are open at
+    once, so two of them reaching `/seeya` together is a Friday evening, not a race
+    somebody has to engineer. What it loses cannot be recomputed either: closed work is
+    read off the ledger's current state and nothing keeps yesterday's.
+
+    The lock is its own file. Locking `stats.jsonl` would not carry, because the atomic
+    write replaces it with a different inode, and the next writer would take a lock on a
+    file the previous one had already replaced.
+    """
+    if fcntl is None:
+        yield
+        return
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCK, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def merge_stats(on: str, project: str, fields: dict) -> None:
     """Merge fields into one day's row, keeping what another command already recorded.
 
     `snapshot` and `collect` each own part of a day. Replacing the row instead of
-    merging would make whichever ran last erase the other's numbers.
+    merging would make whichever ran last erase the other's numbers. The read and the
+    write are one operation under `exclusive`, for the same reason at process scale.
     """
-    rows = read_stats()
-    hit = next((r for r in rows if r["date"] == on and r["project"] == project), None)
-    if hit is None:
-        hit = {"date": on, "project": project}
-        rows.append(hit)
-    # A None means the field no longer applies -- a day that gained `earned_ai` is not a
-    # baseline any more. Merging it as a value would leave the key sitting there.
-    for k, v in fields.items():
-        if v is None:
-            hit.pop(k, None)
-        else:
-            hit[k] = v
-    rows.sort(key=lambda r: (r["date"], r["project"]))
-    write_stats(rows)
+    with exclusive():
+        rows = read_stats()
+        hit = next((r for r in rows if r["date"] == on and r["project"] == project), None)
+        if hit is None:
+            hit = {"date": on, "project": project}
+            rows.append(hit)
+        # A None means the field no longer applies -- a day that gained `earned_ai` is not
+        # a baseline any more. Merging it as a value would leave the key sitting there.
+        for k, v in fields.items():
+            if v is None:
+                hit.pop(k, None)
+            else:
+                hit[k] = v
+        rows.sort(key=lambda r: (r["date"], r["project"]))
+        write_stats(rows)
 
 
 def records_after(project: str, on: str) -> list:
