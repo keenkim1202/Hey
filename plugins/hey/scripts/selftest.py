@@ -516,6 +516,48 @@ assert seen and str(os.getpid()) in seen[0], seen
 assert target.read_text(encoding='utf-8') == 'third'
 """
 
+CONCURRENT_RECORD_PROBE = """
+import json, os, subprocess, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, {here!r})
+import hey
+
+# Eight recorders at once, fifteen days each. Every one of them reads the whole history,
+# edits its own row and writes all of it back, which is the shape that loses a day: with
+# no lock the second writer rewrites the copy it read before the first one landed, and
+# nothing anywhere says a row went missing. The count is what catches it.
+home = Path(tempfile.mkdtemp())
+worker = home / 'worker.py'
+worker.write_text('''
+import sys
+sys.path.insert(0, sys.argv[1])
+from hey import merge_stats
+for i in range(15):
+    merge_stats('2026-01-%02d' % (i + 1), 'p' + sys.argv[2], dict(code=i))
+''')
+env = dict(os.environ, HEY_HOME=str(home))
+procs = [subprocess.Popen([sys.executable, str(worker), {here!r}, str(n)], env=env)
+         for n in range(8)]
+for pr in procs:
+    assert pr.wait() == 0, pr.returncode
+
+rows = [json.loads(ln) for ln in (home / 'stats.jsonl').read_text().splitlines()
+        if ln.strip()]
+keys = set((r['project'], r['date']) for r in rows)
+assert len(keys) == 120, len(keys)
+assert len(rows) == 120, len(rows)
+# The rows have to stay sorted and whole, not merely present.
+assert rows == sorted(rows, key=lambda r: (r['date'], r['project']))
+bad = [r for r in rows if r.get('code') != int(r['date'][-2:]) - 1]
+assert not bad, bad[:3]
+
+# The lock is its own file: `stats.jsonl` is replaced by the atomic write, so a lock taken
+# on it would be a lock on an inode the next writer never sees.
+if hey.fcntl is not None:
+    assert (home / '.lock').exists(), sorted(x.name for x in home.iterdir())
+    assert hey.LOCK != hey.STATS
+"""
+
 TOKEN_COST_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 from board import token_cost, total_tokens
@@ -1779,6 +1821,8 @@ def main() -> int:
             FENCE_PROBE.format(here=str(HERE)),
         "an interrupted write leaves the previous file intact":
             ATOMIC_WRITE_PROBE.format(here=str(HERE)),
+        "eight recorders at once lose no day between them":
+            CONCURRENT_RECORD_PROBE.format(here=str(HERE)),
         "token cost is priced only from rates somebody supplied":
             TOKEN_COST_PROBE.format(here=str(HERE)),
         "a day's commit span is a measure, and its absence is not zero":

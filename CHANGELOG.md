@@ -46,6 +46,17 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **Two recorders at once no longer lose a day between them.** `merge_stats` reads the
+  whole history, edits one row and writes all of it back, and nothing serialised that. Two
+  `/seeya` runs overlapping meant the second one rewrote the copy it had read before the
+  first one landed, and the first one's day was gone with nothing anywhere to say a row had
+  been there. Several worktrees open at once is the case this tool is built around, so that
+  was a Friday evening rather than a race somebody had to engineer, and closed work cannot
+  be recomputed: it is read off the ledger's current state and nothing keeps yesterday's.
+  The read and the write are now one operation under `~/.hey/.lock`, which is its own file
+  because the atomic write replaces `stats.jsonl` with a different inode. Where `fcntl` is
+  missing the lock turns into nothing rather than taking every command with it.
+
 - **The default branch is read off whatever remote records it, not off `origin`.** A
   repository cloned with `-o upstream` writes its default into `refs/remotes/upstream/HEAD`
   exactly as any other does, and the detection asked `origin` alone — so a repository
