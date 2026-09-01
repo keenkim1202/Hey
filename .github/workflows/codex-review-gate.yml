@@ -1,6 +1,21 @@
 name: codex-review-gate
 
-# 코덱스가 단 리뷰 코멘트 중 resolve 안 된 게 있으면 PR 머지를 막는다.
+# 코덱스 리뷰가 끝났고 미해결 코멘트가 없을 때만 PR 머지를 연다.
+#
+# 상태는 셋이다:
+#   failure  미해결 스레드가 있다. resolve 해라.
+#   pending  코덱스가 이 head SHA 를 아직 리뷰하지 않았다. 기다려라.
+#   success  이 head SHA 를 리뷰했고 미해결이 없다.
+#
+# "리뷰했다" 를 review 객체로만 판정하면 안 된다. 지적할 것이 있을 때만 review 가 생기고,
+# 없으면 코덱스는 "Didn't find any major issues" 라는 **평범한 이슈 코멘트** 하나만 남긴다.
+# 그래서 깨끗한 PR 일수록 영영 pending 에 머물렀다. 두 형식 모두 본문에
+# `Reviewed commit: <10자 SHA>` 를 싣고 있으므로, 그 문자열을 리뷰의 증거로 같이 본다.
+#
+# pending 이 없던 시절에는 "미해결 0건" 하나로 판정했는데, 코덱스가 입을 열기 전에도
+# 0 건이라 PR 을 연 직후 6 초 만에 초록이 찍혔다. 리뷰가 없는 것과 깨끗한 리뷰가
+# 구별되지 않았다는 뜻이고, 그 상태로 머지된 PR 이 이미 있다. 새 커밋을 푸시한 뒤
+# 재리뷰 전 구간도 같은 창이었다.
 #
 # 신호는 잡의 성패가 아니라 **커밋 상태(commit status)** 다. 이유:
 # 코멘트·리뷰 이벤트로 돈 실행은 GITHUB_SHA 가 PR 의 head 가 아니라서
@@ -12,6 +27,9 @@ name: codex-review-gate
 # "Resolve conversation" 을 눌러도 이 워크플로는 안 돈다. 푸시·코멘트·리뷰가
 # 새로 오거나 아래 수동 실행을 해야 초록으로 바뀐다.
 #   gh workflow run codex-review-gate.yml --repo keenkim1202/<레포> -f pr=<번호>
+#
+# 한계 둘: issue_comment 는 pull_request 계열이 아니라서 **기본 브랜치의** 워크플로 파일이
+# 돈다. 이 트리거를 고치는 변경은 병합되기 전까지 그 PR 자신에게는 적용되지 않는다.
 
 on:
   pull_request:
@@ -20,20 +38,42 @@ on:
     types: [submitted, dismissed]
   pull_request_review_comment:
     types: [created, edited, deleted]
+  # 지적이 없을 때 코덱스가 남기는 것은 리뷰가 아니라 이슈 코멘트다. 이 트리거가 없으면
+  # 게이트를 다시 돌릴 이벤트가 아무것도 오지 않는다.
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr:
         description: 평가할 PR 번호
         required: true
 
+# 코덱스 리뷰 한 번이 pull_request_review 와 pull_request_review_comment 을 같은 초에
+# 쏘기 때문에, 한 PR 에 잡이 둘 나란히 도는 것은 예외가 아니라 기본이다. 커밋 상태는
+# (sha, context) 마다 마지막에 쓴 쪽만 남으므로, 리뷰가 도착하기 전에 조회를 마친 잡이
+# 리뷰 뒤에 조회한 잡보다 늦게 POST 하면 pending 이 success 를 덮는다. 그리고 그 뒤로
+# 이벤트가 하나도 오지 않으면 그대로 굳는다.
+#
+# 그래서 취소가 아니라 줄을 세운다. 뒤에 선 잡은 앞 잡이 끝난 뒤에 조회를 시작하므로,
+# 마지막에 POST 하는 쪽이 언제나 가장 최근 조회다. 취소로도 순서는 잡히지만 취소된 잡이
+# 체크 목록에서 실패로 읽혀서, 판정과 무관한 빨강이 PR 마다 하나씩 남는다. 잡이 10 초를
+# 넘지 않으니 기다리는 값은 사실상 없다. 대기 중에 세 번째가 오면 기다리던 쪽이 밀려나는데,
+# 그때도 남는 것은 가장 최근 것이라 판정은 달라지지 않는다.
+concurrency:
+  group: codex-review-gate-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pull-requests: read
+  issues: read
   statuses: write
 
 jobs:
   gate:
     runs-on: ubuntu-latest
+    # issue_comment 는 PR 이 아닌 이슈에서도 온다. 그쪽은 볼 것이 없다.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     steps:
       - name: 코덱스 미해결 스레드 확인
         env:
@@ -46,11 +86,12 @@ jobs:
           set -euo pipefail
 
           BOT=chatgpt-codex-connector   # GraphQL 의 author.login 에는 [bot] 이 안 붙는다
+          BOT_Q="${BOT}[bot]"           # 반대로 reviews(author:) 는 [bot] 붙은 이름만 받는다
           CONTEXT=codex-review          # 필수 체크로 거는 이름. 바꾸면 브랜치 보호도 같이 고쳐야 한다
           EV="$GITHUB_EVENT_PATH"
           NAME="${REPO#*/}"
 
-          PR_NUM=$(jq -r '.pull_request.number // empty' "$EV")
+          PR_NUM=$(jq -r '.pull_request.number // .issue.number // empty' "$EV")
           [ -n "$PR_NUM" ] || PR_NUM="${PR_INPUT:-}"
           if [ -z "$PR_NUM" ]; then
             echo "PR 번호를 못 찾았다. 수동 실행이라면 -f pr=<번호> 를 달아라." >&2
@@ -62,9 +103,15 @@ jobs:
           HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq '.head.sha')
 
           THREADS=$(gh api graphql -f query='
-            query($owner:String!, $name:String!, $num:Int!) {
+            query($owner:String!, $name:String!, $num:Int!, $bot:String!) {
               repository(owner:$owner, name:$name) {
                 pullRequest(number:$num) {
+                  # 코덱스 것만 서버에서 걸러 온다. 걸러 오지 않으면 이 100 칸은 사람과
+                  # 봇의 리뷰가 나눠 쓰는 창이라, 코덱스 리뷰 뒤에 리뷰가 100 건 쌓인
+                  # PR 에서는 이미 본 head 를 못 봤다고 답하게 된다.
+                  reviews(last:100, author:$bot) {
+                    nodes { author { login } commit { oid } body }
+                  }
                   reviewThreads(first:100) {
                     nodes {
                       isResolved
@@ -75,7 +122,7 @@ jobs:
                   }
                 }
               }
-            }' -F owner="$OWNER" -F name="$NAME" -F num="$PR_NUM")
+            }' -F owner="$OWNER" -F name="$NAME" -F num="$PR_NUM" -F bot="$BOT_Q")
 
           # 코드가 바뀌어 outdated 가 된 스레드도 resolve 전까지는 미해결로 센다.
           # 고쳤으면 "Resolve conversation" 을 눌러 닫으라는 뜻이다.
@@ -87,18 +134,54 @@ jobs:
           ' <<<"$THREADS")
           N=$(jq 'length' <<<"$OPEN")
 
-          if [ "$N" -eq 0 ]; then
+          # 리뷰는 head SHA 에 달린 것만 센다. 옛 커밋에 달린 리뷰는 그 뒤에 푸시된
+          # 코드를 본 적이 없으므로, 그것으로 초록을 주면 리뷰를 우회하는 길이 된다.
+          # author 를 여기서 또 보는 이유는 위 필터가 언젠가 아무것도 거르지 않게 됐을 때
+          # 사람 리뷰 하나로 초록이 켜지는 쪽으로 실패하지 않게 하기 위해서다.
+          # author 나 commit 이 null 이어도 jq 는 null 을 돌려주므로 그냥 안 맞는다.
+          # 본문의 `Reviewed commit:` 은 10 자로 줄인 SHA 를 싣는다.
+          SHORT="${HEAD_SHA:0:10}"
+
+          # 지적이 있을 때 남는 리뷰. 연결이 코덱스로 걸러져 있으니 100 칸은 코덱스 것뿐이다.
+          REVIEWS=$(jq --arg bot "$BOT" --arg sha "$HEAD_SHA" --arg short "$SHORT" '
+            [ .data.repository.pullRequest.reviews.nodes[]
+              | select(.author.login == $bot)
+              | select(.commit.oid == $sha or ((.body // "") | contains($short))) ] | length
+          ' <<<"$THREADS")
+
+          # 지적이 없을 때 남는 평범한 코멘트. 이쪽은 걸러 올 인자가 없어서 100 칸을 사람과
+          # 나눠 쓰고, 코멘트가 하나 달릴 때마다 이 워크플로가 다시 도는 탓에 깨끗한 결과가
+          # 창 밖으로 밀려나면 이미 본 head 를 못 봤다고 답하게 된다. 그래서 GraphQL 대신
+          # REST 를 `--paginate` 로 끝까지 읽는다. 커서를 직접 돌리는 것보다 짧다.
+          # REST 의 login 에는 [bot] 이 붙으므로 여기서 쓰는 이름은 GraphQL 쪽과 다르다.
+          CLEAN=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
+                    --jq "[.[] | select(.user.login == \"$BOT_Q\")
+                              | select(.body | contains(\"Reviewed commit\")
+                                            and contains(\"$SHORT\"))] | length" \
+                  | jq -s 'add // 0')
+
+          REVIEWED=$((REVIEWS + CLEAN))
+
+          if [ "$N" -gt 0 ]; then
+            STATE=failure
+            DESC="코덱스 미해결 코멘트 ${N}건: resolve 후 다시 실행"
+          elif [ "$REVIEWED" -eq 0 ]; then
+            STATE=pending
+            DESC="코덱스 리뷰 대기 중"
+          else
             STATE=success
             DESC="코덱스 미해결 코멘트 없음"
-          else
-            STATE=failure
-            DESC="코덱스 미해결 코멘트 ${N}건 — resolve 후 다시 실행"
           fi
 
           {
             echo "## 코덱스 리뷰 게이트"
             echo
             echo "PR #$PR_NUM · \`${HEAD_SHA:0:7}\` · **$STATE** — $DESC"
+            if [ "$STATE" = pending ]; then
+              echo
+              echo "이 커밋에 달린 코덱스 리뷰가 아직 없다. 리뷰가 도착하면 이 체크가"
+              echo "저절로 갱신된다. 코덱스가 영영 돌지 않는 PR 은 관리자 권한으로 머지해라."
+            fi
             if [ "$N" -gt 0 ]; then
               echo
               jq -r '.[] | "- `\(.path)`\(if .outdated then " (outdated)" else "" end) — \(.url)"' <<<"$OPEN"
