@@ -36,6 +36,14 @@ HOME = Path(os.environ.get("HEY_HOME", Path.home() / ".hey"))
 CONFIG = HOME / "config.json"
 STATS = HOME / "stats.jsonl"
 LOCK = HOME / ".lock"
+
+# Stamped on the config and on every stats row this version writes. Nothing reads it to
+# decide anything yet, and that is the point: the fields here have already been rewritten
+# once, when ranking and streaks came out, and rows written before and after that change
+# are indistinguishable today. A row with no `v` is one written before this line existed,
+# which is a thing worth being able to say later. Untouched rows are left as they are,
+# because stamping them would claim this version wrote what it only read.
+SCHEMA = 1
 TEMPLATES = Path(__file__).parent.parent / "templates"
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -121,6 +129,7 @@ def write_atomic(path: Path, text: str) -> None:
 
 
 def save_config(cfg: dict) -> None:
+    cfg["v"] = SCHEMA
     write_atomic(CONFIG, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
 
 
@@ -1058,6 +1067,7 @@ def merge_stats(on: str, project: str, fields: dict) -> None:
                 hit.pop(k, None)
             else:
                 hit[k] = v
+        hit["v"] = SCHEMA
         rows.sort(key=lambda r: (r["date"], r["project"]))
         write_stats(rows)
 
@@ -1309,6 +1319,12 @@ def cmd_doctor(args, cfg):
 
     print("config")
     ok(str(CONFIG)) if CONFIG.exists() else say("warn", f"{CONFIG} does not exist yet")
+    ok(f"schema v{cfg.get('v', 0)}" + ("" if "v" in cfg else " - written before versioning"))
+    rows = read_stats()
+    old_rows = [r for r in rows if "v" not in r]
+    if old_rows:
+        ok(f"{len(old_rows)} of {len(rows)} recorded day(s) predate versioning. "
+           f"They are read exactly as they always were")
     if not cfg["projects"]:
         say("warn", "no projects registered. `hey.py add <path> --init`")
 
