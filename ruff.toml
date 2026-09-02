@@ -1,0 +1,17 @@
+# `ruff check` is what CI runs, and this file is why running it here gives the same answer.
+#
+# The selection is spelled out rather than extended, because ruff's own default has grown
+# well past the classic four groups and now brings opinions with it -- it wants a timezone
+# on a date this tool keeps deliberately local, and it wants the multi-line f-strings in
+# the card layout parenthesised. What is left is the part that finds defects: E4 imports,
+# E7 statements, E9 syntax errors, F pyflakes, W warnings.
+#
+# Line length is left out on purpose. These files already wrap themselves at about 95
+# columns, so a limit set here would do nothing but argue with the wrapping in place.
+#
+# CI pins the ruff version. A new release that adds a rule to any of these groups would
+# otherwise turn a green branch red without anybody changing a line.
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W"]

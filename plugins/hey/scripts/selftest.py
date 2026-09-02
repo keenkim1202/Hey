@@ -2084,7 +2084,7 @@ def main() -> int:
     # One line for the whole ledger, and informational: a project with two hundred
     # un-idded items would otherwise report two hundred warnings about a file that is
     # working fine, and bury the failures that are not.
-    idline = next((l for l in out.splitlines() if "carry no `[id <name>]`" in l), "")
+    idline = next((ln for ln in out.splitlines() if "carry no `[id <name>]`" in ln), "")
     check("doctor: the id notice is informational, not a warning",
           idline.strip().startswith("info"), idline or out)
 
