@@ -1991,7 +1991,18 @@ def cmd_next(args, cfg):
 
 
 def cmd_dirty(args, cfg):
-    """Work that never left as a commit or PR. The easiest state to forget, so it gets its own view."""
+    """Work that never left as a commit or PR. The easiest state to forget, so it gets its own view.
+
+    `--at-risk` narrows the report to what no remote holds, and prints nothing else at all.
+
+    That flag exists because the session hook was deciding the same thing by reading this
+    report as prose: any line that was not the all-clear counted as work about to be lost.
+    Every other line here therefore set off the alarm -- a branch that was fully pushed and
+    merely ahead of its base, a repository with no remote and nothing to push. The
+    distinction was already made here and then thrown away at the edge of a pipe, which is
+    the shape of half the bugs in this file. Made once, and passed on.
+    """
+    at_risk = getattr(args, "at_risk", False)
     for p in projects_in_scope(cfg, args.scope, args.project):
         root = Path(p["root"])
         led = Ledger(p) if Path(p["ledger"]).exists() else None
@@ -2008,7 +2019,10 @@ def cmd_dirty(args, cfg):
             # correct and useless, since no amount of work makes it go down.
             gone, has_up = unpushed(w, base) if remote else (0, False)
             comparable = comparable and ok
-            if st or gone or ahead:
+            # A pushed branch awaiting review is ahead of the base as well, so this is the
+            # one line in the block that is not about losable work.
+            show_ahead = bool(ahead) and not at_risk
+            if st or gone or show_ahead:
                 found = True
                 owner = led.item_for_branch(br) if led else None
                 whose = f"  {DOT} {owner['title']}" if owner else ""
@@ -2019,7 +2033,7 @@ def cmd_dirty(args, cfg):
                 if gone:
                     where = "unpushed" if has_up else "on a branch never pushed"
                     print(f"    {gone} commit(s) {where}")
-                if ahead and not gone:
+                if show_ahead and not gone:
                     # Without a remote this is the only commit measure there is, and it is
                     # a real one: work that has not reached the branch it lands on.
                     where = "pushed but not in" if remote else "not yet in"
@@ -2028,6 +2042,15 @@ def cmd_dirty(args, cfg):
                     print(f"    {len(st.split(chr(10)))} uncommitted file(s)")
                     for f in st.split("\n")[:5]:
                         print(f"      {f}")
+        if at_risk:
+            # The only other thing worth saying under this flag: the check could not be
+            # made. Reporting that as silence would be indistinguishable from a clean
+            # answer, and the hook says so in its own words.
+            if git_root(root) and remote and not comparable:
+                missing = f"{base} not found" if base else "no default branch"
+                print(f"[{p['name']}] unpushed commits were NOT checked ({missing}). "
+                      f'Set "base" for this project in {CONFIG}')
+            continue
         if not git_root(root):
             # Said plainly rather than as a failed check. There are no commits here to be
             # ahead of anything, and telling somebody to set a base branch for a directory
@@ -2729,6 +2752,8 @@ def main() -> None:
     sp = scoped(add("next", cmd_next, help="what is next up"))
     sp.add_argument("--limit", type=int, default=5)
     sp = scoped(add("dirty", cmd_dirty, help="uncommitted or unpushed work"))
+    sp.add_argument("--at-risk", action="store_true", dest="at_risk",
+                    help="only work no remote holds, and nothing else")
     sp.add_argument("--base", help="override the project's base branch for this call")
     sp = scoped(add("batch", cmd_batch, help="loop candidates and parallel-safety evidence"))
     sp.add_argument("--limit", type=int, default=6)

@@ -36,18 +36,19 @@ def main() -> None:
     # `all`, and a session opened in one project has no business opening with another's
     # state -- the message below claims the work is about to be lost, which is a claim
     # about where you are working right now.
-    out = subprocess.run([sys.executable, str(HEY), "dirty", "--scope", "current"],
+    out = subprocess.run([sys.executable, str(HEY), "dirty", "--scope", "current",
+                          "--at-risk"],
                          cwd=cwd, capture_output=True, text=True)
 
-    # Decided line by line rather than with a substring. `dirty` prints one block per
-    # project and its all-clear is itself a line reading "nothing uncommitted or unpushed",
-    # so `"nothing uncommitted" in text` went quiet whenever *any* project in scope was
-    # clean -- which, under scope `all`, is exactly when another one was not. Scoping to one
-    # project makes that unreachable today; deciding structurally keeps it unreachable.
+    # `--at-risk` is why this can be decided by what is present rather than by what is
+    # absent. Without it `dirty` prints several kinds of line that are not about losable
+    # work -- an all-clear, a branch that is pushed and merely ahead of its base, a
+    # repository with no remote -- and every one of them used to land in `loose` here. A
+    # fully pushed branch set off the alarm on every session, which is the state this hook
+    # exists to distinguish. The report already knew the difference; only the pipe did not.
     lines = [ln for ln in out.stdout.split("\n") if ln.strip()]
     unchecked = [ln for ln in lines if "were NOT checked" in ln]
-    loose = [ln for ln in lines
-             if "nothing uncommitted" not in ln and "were NOT checked" not in ln]
+    loose = [ln for ln in lines if "were NOT checked" not in ln]
     if not loose and not unchecked:
         return
 
