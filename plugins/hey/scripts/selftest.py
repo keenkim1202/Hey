@@ -477,6 +477,34 @@ assert g['total_ai'] == 1.0, g['total_ai']
 assert g['cb_total'] == 2, g['cb_total']
 """
 
+SCHEMA_PROBE = """
+import json, os, sys, tempfile
+from pathlib import Path
+os.environ['HEY_HOME'] = tempfile.mkdtemp()
+sys.path.insert(0, {here!r})
+import hey
+
+# A row written before this field existed has to stay that way. The absence is the record
+# of when it was written, and stamping a row the current code only read would erase it.
+hey.write_stats([dict(date='2026-01-01', project='p', code=1)])
+hey.merge_stats('2026-01-02', 'p', dict(code=2))
+rows = hey.read_stats()
+by = dict((r['date'], r) for r in rows)
+assert 'v' not in by['2026-01-01'], by['2026-01-01']
+assert by['2026-01-02']['v'] == hey.SCHEMA, by['2026-01-02']
+
+# Touching that old row is a write, so it takes the stamp.
+hey.merge_stats('2026-01-01', 'p', dict(tokens=5))
+by = dict((r['date'], r) for r in hey.read_stats())
+assert by['2026-01-01']['v'] == hey.SCHEMA, by['2026-01-01']
+assert by['2026-01-01']['code'] == 1, by['2026-01-01']
+
+# The config carries it too, and saving is the only thing that puts it there.
+hey.save_config(dict(projects=[]))
+assert json.loads(hey.CONFIG.read_text())['v'] == hey.SCHEMA
+"""
+
+
 ATOMIC_WRITE_PROBE = """
 import sys; sys.path.insert(0, {here!r})
 import tempfile
@@ -1821,6 +1849,8 @@ def main() -> int:
             FENCE_PROBE.format(here=str(HERE)),
         "an interrupted write leaves the previous file intact":
             ATOMIC_WRITE_PROBE.format(here=str(HERE)),
+        "a row written before versioning keeps saying so":
+            SCHEMA_PROBE.format(here=str(HERE)),
         "eight recorders at once lose no day between them":
             CONCURRENT_RECORD_PROBE.format(here=str(HERE)),
         "token cost is priced only from rates somebody supplied":

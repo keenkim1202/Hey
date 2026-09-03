@@ -12,6 +12,14 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### New
 
+- **The config and every recorded day now carry a schema version.** Nothing reads it to
+  decide anything, and that is the point. The fields in these files have already been
+  rewritten once, when ranking and streaks came out, and a row written before that change
+  is indistinguishable from one written after it. A row with no `v` is one written before
+  this landed, which is worth being able to say later. Rows this version only reads are
+  left alone, since stamping them would claim it wrote what it did not, and `doctor` says
+  how many of them there are.
+
 - `open-items` prints every open item's own words, in ledger order, with nothing sorted and
   nothing cut. `next` and `batch` both answer "what now", so both stop early; a question
   about the shape of the whole plan needs the tail as well. Blocked items are marked, not
