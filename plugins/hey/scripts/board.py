@@ -27,8 +27,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
-    Ledger, ahead_of_base, card_width, day_range, die, die_out_of_scope, fmt_date,
-    load_config, merge_stats, clip_to, need_history, project_base, projects_in_scope,
+    Ledger, card_width, day_range, die_out_of_scope, fmt_date,
+    load_config, merge_stats, clip_to, project_base, projects_in_scope,
     read_stats, record_progress, records_after, today_str, unpushed, worktree_roots, _sh,
 )
 

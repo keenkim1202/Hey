@@ -7,6 +7,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # Pinned. Ruff adds rules to existing groups between releases, so an unpinned
+      # install turns a branch red on a day nobody touched it, and the failure names a
+      # line that has not changed in months. Raising this is a commit of its own.
+      - run: pip install ruff==0.16.5
+
+      # The selection lives in ruff.toml, so `ruff check` here and `ruff check` on a
+      # laptop answer the same question.
+      - run: ruff check
+
   selftest:
     name: selftest (${{ matrix.os }}, python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}

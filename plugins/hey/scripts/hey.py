@@ -1249,7 +1249,7 @@ def cmd_add(args, cfg):
         for r in found[:3]:
             print(f"          a repository sits below: {r}")
         if found:
-            print(f"          re-add with that path if it is the project")
+            print("          re-add with that path if it is the project")
     elif not has_remote(root):
         print("  base:   no remote - there is nowhere to push, so unpushed work is not a "
               "measure here. Commits and code counts are unaffected")
@@ -2139,7 +2139,7 @@ def lead_time(pr: dict) -> str:
     except ValueError:
         return ""
     n = (d1 - d0).days
-    return f", merged same day" if n <= 0 else f", {n} day(s) open"
+    return ", merged same day" if n <= 0 else f", {n} day(s) open"
 
 
 def cmd_pr_sync(args, cfg):
@@ -2370,7 +2370,7 @@ def cmd_import_tasks(args, cfg):
     phase, out, n = None, [], 0
     for ln in src.read_text(encoding="utf-8").split("\n"):
         if m := SPEC_PHASE.match(ln):
-            num, final, title = m[1], m[2], m[3]
+            num, title = m[1], m[3]
             phase = f"P{num}" if num else "PZ"
             out.append(f"\n## {phase}. {title} (? MD / AI ?)\n")
         elif t := SPEC_TASK.match(ln):
