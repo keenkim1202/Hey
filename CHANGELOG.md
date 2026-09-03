@@ -54,6 +54,16 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **The session hook stopped crying wolf.** It reads `dirty` and had been deciding by what
+  was absent: any line that was not the all-clear counted as work about to be lost. Every
+  other line that report prints therefore set the alarm off, and the two it prints most are
+  a branch that is fully pushed and merely ahead of its base, and a repository with no
+  remote and nothing to push. Neither can lose anything, and the alarm fired on both on
+  every session. `dirty --at-risk` now answers the narrower question the hook was asking,
+  printing what no remote holds and nothing else, so the hook decides by what is there.
+  The distinction had been made inside `dirty` for a while; it was being thrown away at the
+  edge of a pipe.
+
 - **Two recorders at once no longer lose a day between them.** `merge_stats` reads the
   whole history, edits one row and writes all of it back, and nothing serialised that. Two
   `/seeya` runs overlapping meant the second one rewrote the copy it had read before the

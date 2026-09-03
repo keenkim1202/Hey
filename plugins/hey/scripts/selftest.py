@@ -2186,6 +2186,24 @@ def main() -> int:
     code, out = run(hook, hook_env, proj)
     check("hook: a clean project elsewhere does not silence the dirty one",
           "neither committed nor pushed" in out, out)
+    # A branch that is fully pushed is still ahead of its base, and the hook used to read
+    # every line of `dirty` that was not the all-clear as work about to be lost. So the
+    # alarm fired on every session over a branch that could not be lost at all. `dirty`
+    # itself had made the distinction for a while; the hook was re-deriving it from prose.
+    git("checkout", "-q", "-b", "reviewed", cwd=clean)
+    (clean / "reviewed.txt").write_text("pushed, awaiting review\n")
+    git("add", "-A", cwd=clean)
+    git("commit", "-qm", "awaiting review", cwd=clean)
+    git("push", "-q", "-u", "origin", "reviewed", cwd=clean)
+    code, out = run([hey, "dirty", "--project", "clean"], env, clean)
+    check("dirty: a pushed branch still reads as ahead of the base",
+          "pushed but not in" in out, out)
+    code, out = run([hey, "dirty", "--project", "clean", "--at-risk"], env, clean)
+    check("dirty --at-risk: a pushed branch is not work at risk", not out.strip(), out)
+    code, out = run(hook, hook_env, clean)
+    check("hook: silent for a branch that is pushed and only ahead of its base",
+          code == 0 and not out.strip(), out)
+
     run([hey, "remove", "clean"], env, proj)
 
     # One project is one repository, so a linked worktree must not register on its own.
