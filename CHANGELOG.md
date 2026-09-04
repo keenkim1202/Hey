@@ -54,6 +54,18 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **The guard against backdating box state now sits inside the lock it was standing next
+  to.** `collect` and `snapshot` both read the recorded history to decide whether a day may
+  carry box state, and read it a second time to decide whether the day is a baseline, and
+  only the write after those two was locked. Two runs recording different dates at once
+  therefore both answered from a history the other was in the middle of rewriting: the
+  earlier one wrote today's boxes into a day that already had a record after it, which is
+  the exact corruption the guard exists to prevent, and two first-ever records could each
+  mark themselves the baseline. The lock now spans the guard, the snapshot and the write.
+  Code and token counts are gathered before it is taken, since they walk git and the
+  transcripts, read nothing the lock protects, and would make two projects wait on each
+  other for seconds.
+
 - **The session hook stopped crying wolf.** It reads `dirty` and had been deciding by what
   was absent: any line that was not the all-clear counted as work about to be lost. Every
   other line that report prints therefore set the alarm off, and the two it prints most are
