@@ -1016,9 +1016,19 @@ def write_stats(rows: list[dict]) -> None:
     write_atomic(STATS, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
 
 
+_lock_depth = 0
+_lock_fh = None
+
+
 @contextmanager
 def exclusive():
     """Hold `~/.hey/.lock` for the length of one read-modify-write of `stats.jsonl`.
+
+    Reentrant, because the callers that need it hold it across a decision and then call
+    something that takes it again. `flock` is held per open file description, not per
+    process, so a second `open` inside the first would wait on a lock this process is
+    already holding and never wake up. The depth counter is safe here for the reason it is
+    usually not: these are single-threaded command-line runs, one at a time per process.
 
     `write_atomic` stops a reader seeing half a file. It does nothing about two writers.
     `merge_stats` reads the whole history, edits one row and writes all of it back, so two
@@ -1035,16 +1045,30 @@ def exclusive():
     write replaces it with a different inode, and the next writer would take a lock on a
     file the previous one had already replaced.
     """
+    global _lock_depth, _lock_fh
     if fcntl is None:
         yield
         return
-    LOCK.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOCK, "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+    if _lock_depth:
+        _lock_depth += 1
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            _lock_depth -= 1
+        return
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    _lock_fh = open(LOCK, "w")
+    try:
+        fcntl.flock(_lock_fh, fcntl.LOCK_EX)
+        _lock_depth = 1
+        try:
+            yield
+        finally:
+            _lock_depth = 0
+            fcntl.flock(_lock_fh, fcntl.LOCK_UN)
+    finally:
+        _lock_fh.close()
+        _lock_fh = None
 
 
 def merge_stats(on: str, project: str, fields: dict) -> None:
@@ -1609,12 +1633,21 @@ def cmd_snapshot(args, cfg):
         # Without it, `snapshot --date <a day before the last record>` wrote today's boxes
         # into the past, and every later reading of variance, carry-over and closed work
         # was computed against a state that never existed.
-        if records_after(p["name"], on):
-            print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so box "
-                  f"state is left alone -- the ledger only holds today. Nothing written")
-            continue
-        snap = record_progress(led, on)
-        merge_stats(on, p["name"], snap)
+        # The guard, the snapshot and the write are one operation. Read outside the lock,
+        # the guard answers about a history another process is in the middle of changing:
+        # two runs recording different dates both see no later record, and the earlier one
+        # then writes today's boxes into the past -- which is the exact corruption the guard
+        # exists to prevent, arrived at through the door the guard was left holding open.
+        # `record_progress` reads the same history again to decide whether this day is the
+        # baseline, so two first-ever records can both claim to be one.
+        with exclusive():
+            if records_after(p["name"], on):
+                print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so "
+                      f"box state is left alone -- the ledger only holds today. "
+                      f"Nothing written")
+                continue
+            snap = record_progress(led, on)
+            merge_stats(on, p["name"], snap)
         boxes = f"({snap['cb_done']}/{snap['cb_total']} boxes)"
         if snap.get("baseline"):
             print(f"[{p['name']}] {fmt_date(on)} recorded as the baseline {boxes}. "

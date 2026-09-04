@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
     Ledger, card_width, day_range, die_out_of_scope, fmt_date,
-    load_config, merge_stats, clip_to, project_base, projects_in_scope,
+    exclusive, load_config, merge_stats, clip_to, project_base, projects_in_scope,
     read_stats, record_progress, records_after, today_str, unpushed, worktree_roots, _sh,
 )
 
@@ -228,24 +228,36 @@ def cmd_collect(args, cfg):
     for p in projs:
         fields = {}
         root = Path(p["root"])
-        # Why box state cannot be backdated is in `records_after`. Code and tokens do
-        # backfill, because git and the transcripts keep their own history, so unlike
-        # `snapshot` this command still collects those two for the earlier day.
-        later = records_after(p["name"], on)
-        if Path(p["ledger"]).exists() and not later:
-            fields.update(record_progress(Ledger(p), on))
-        elif later:
-            print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so box "
-                  f"state is left alone -- the ledger only holds today. Code and tokens only")
         # Resolved per project: a repository may carry its own committer identity.
         author = (args.author or cfg.get("author")
                   or _sh(["git", "config", "user.email"], root))
         if not author:
             print(f"[{p['name']}] no git author resolved, so code counts every author's "
                   f"commits. Pass --author to narrow it")
-        fields["code"] = code_lines(p, on, author)
-        fields["tokens"] = token_usage(p, on)
-        merge_stats(on, p["name"], fields)
+        # Counted before the lock is taken. Both walk git and the transcripts, which is
+        # seconds of work that reads nothing this lock protects, and holding it through
+        # them would make two projects collecting at once wait on each other for no reason.
+        code, tokens = code_lines(p, on, author), token_usage(p, on)
+
+        # The guard, the snapshot and the write are one operation. Read outside the lock,
+        # the guard answers about a history another process is in the middle of changing:
+        # two runs recording different dates both see no later record, and the earlier one
+        # then writes today's boxes into the past. `record_progress` reads that history a
+        # second time to decide whether this is the baseline, so two first-ever records can
+        # both claim to be one. Why box state cannot be backdated at all is in
+        # `records_after`. Code and tokens do backfill, because git and the transcripts keep
+        # their own history, so unlike `snapshot` this command still collects those two for
+        # the earlier day.
+        with exclusive():
+            later = records_after(p["name"], on)
+            if Path(p["ledger"]).exists() and not later:
+                fields.update(record_progress(Ledger(p), on))
+            elif later:
+                print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so "
+                      f"box state is left alone -- the ledger only holds today. "
+                      f"Code and tokens only")
+            fields["code"], fields["tokens"] = code, tokens
+            merge_stats(on, p["name"], fields)
         c, t = fields["code"], fields["tokens"]
         if "cb_done" not in fields:
             closed = "not collected - a later day is already recorded"

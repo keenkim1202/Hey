@@ -477,6 +477,57 @@ assert g['total_ai'] == 1.0, g['total_ai']
 assert g['cb_total'] == 2, g['cb_total']
 """
 
+COLLECT_LOCK_PROBE = """
+import fcntl, json, os, subprocess, sys, tempfile, time
+from pathlib import Path
+
+# Its own history, because this probe has to be the only writer: it injects a record while
+# a command is waiting, and rows left in the shared fixture would change what later checks
+# read. Set before the import, since the paths bind there.
+home = Path(tempfile.mkdtemp())
+os.environ['HEY_HOME'] = str(home)
+sys.path.insert(0, {here!r})
+import hey
+
+proj = Path({proj!r})
+(home / 'config.json').write_text(json.dumps(dict(projects=[
+    dict(name='fixture', root=str(proj), ledger=str(proj / 'TASKS.local.md'))])))
+
+# `collect` decides from the recorded history and then writes to it. Both halves have to sit
+# inside one lock. Read outside it, the guard answers about a file another process is in the
+# middle of rewriting, and the answer it gives is the one that writes today's boxes into a
+# day that already has a record after it.
+#
+# The window is made observable here: hold the lock, start the command, and only then add
+# the later record. A guard that runs before the lock has already read a history without it
+# and banks box state into the past. A guard that runs inside sees what is there when its
+# turn comes, and leaves box state alone.
+TARGET, LATER = '2030-01-01', '2030-01-02'
+fh = open(hey.LOCK, 'w')
+fcntl.flock(fh, fcntl.LOCK_EX)
+child = subprocess.Popen([sys.executable, {board!r}, 'collect',
+                          '--project', 'fixture', '--date', TARGET],
+                         env=os.environ, cwd=str(proj),
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+time.sleep(2)
+assert child.poll() is None, 'collect finished while the lock was held'
+# `records_after` only counts a row that carries box state, so an empty `items` would be
+# invisible to the guard and the assertion below would pass without proving anything.
+hey.write_stats([dict(date=LATER, project='fixture', cb_done=0, cb_total=1,
+                      items=[dict(k='x', ai=0.0, state='todo',
+                                  closed=0, boxes=1, earned=0.0)])])
+fcntl.flock(fh, fcntl.LOCK_UN)
+fh.close()
+out, _ = child.communicate(timeout=120)
+assert child.returncode == 0, (child.returncode, out)
+
+hit = [r for r in hey.read_stats() if r['date'] == TARGET]
+assert hit, out
+assert 'code' in hit[0], (hit[0], out)          # the day was collected
+assert 'cb_done' not in hit[0], (hit[0], out)   # and its box state was left alone
+"""
+
+
 SCHEMA_PROBE = """
 import json, os, sys, tempfile
 from pathlib import Path
@@ -1851,6 +1902,8 @@ def main() -> int:
             ATOMIC_WRITE_PROBE.format(here=str(HERE)),
         "a row written before versioning keeps saying so":
             SCHEMA_PROBE.format(here=str(HERE)),
+        "the guard on backdated box state is inside the lock, not before it":
+            COLLECT_LOCK_PROBE.format(here=str(HERE), board=board, proj=str(proj)),
         "eight recorders at once lose no day between them":
             CONCURRENT_RECORD_PROBE.format(here=str(HERE)),
         "token cost is priced only from rates somebody supplied":
