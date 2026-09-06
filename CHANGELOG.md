@@ -54,6 +54,25 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **Four commands were answering about the wrong thing.** `context` asked every ref once
+  per worktree, so one commit was reported as many times as there are worktrees. Worktrees
+  share one ref store, so it asks once for the repository now, still across every ref,
+  because the day being reconstructed is usually not today and by then the work sits
+  anywhere: a branch checked out nowhere, a detached head, or only a remote-tracking ref
+  because the local branch went after the push. What keeps other people's commits out is
+  the author filter, the one `collect` and `draft-log` already resolve, and it says so when
+  no author resolves rather than quietly widening. It also names a directory that is not a
+  repository instead of reporting it as a day when nothing happened. `dirty`, `context` and
+  `draft-log` exited quietly with no output when the current directory belonged to no
+  registered project, which for `dirty` is indistinguishable from saying nothing is at
+  risk; they fail the way `collect` always has. `add` dropped a previous registration by
+  name alone, so one repository could sit in the registry twice under two names and have
+  its commits and tokens counted once for each; it refuses the second name now, because
+  replacing looks like a rename and is not one, and every recorded day is keyed by the name
+  and would stay behind under a project that no longer exists. And `doctor` stripped only
+  `origin/` when checking `[branch ...]` markers, so a branch carried by a remote called
+  anything else was reported as one git does not have.
+
 - **The guard against backdating box state now sits inside the lock it was standing next
   to.** `collect` and `snapshot` both read the recorded history to decide whether a day may
   carry box state, and read it a second time to decide whether the day is a baseline, and

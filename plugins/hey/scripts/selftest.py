@@ -2292,6 +2292,161 @@ def main() -> int:
           code == 0 and "unregistered: second" in out, out)
     check("remove: ledger survived", (second / "TASKS.local.md").exists(), "")
 
+    # One repository is one project. Filtering the registry by name alone let the same root
+    # in twice under two names, and then `scope all` counted its commits and its transcripts
+    # once for each while `resolve` answered with whichever sorted first.
+    run([hey, "add", str(second), "--name", "dup-one"], env, proj)
+    code, out = run([hey, "add", str(second), "--name", "dup-two"], env, proj)
+    entries = [e for e in json.loads((home / "config.json").read_text())["projects"]
+               if Path(e["root"]).resolve() == second.resolve()]
+    # Refused, not replaced. Dropping the other entry would read as a rename and is not
+    # one: the new entry inherits none of the old one's settings, and every recorded day is
+    # keyed by the name, so the history would stay behind under a project that no longer
+    # exists. The one that was there is left exactly as it was.
+    check("add: one repository does not register twice under two names",
+          code != 0 and "already registered as dup-one" in out
+          and [e["name"] for e in entries] == ["dup-one"],
+          f"{[e['name'] for e in entries]}\n{out}")
+    run([hey, "remove", "dup-one"], env, proj)
+
+    # `--author` is a regular expression to git, and this value is an identity read out of
+    # `user.email`, where `+` and `*` are legal in the local part. Read as a pattern,
+    # `foo*tag@example.com` matches none of its own commits and the day reports empty.
+    # Set on the commit rather than through config: the fixture puts its identity in the
+    # environment, and that wins over `-c user.email`.
+    git("commit", "-q", "--allow-empty", "--author=meta <foo*tag@example.com>",
+        "-m", "authored with a metacharacter")
+    meta = _sh_out(["git", "rev-parse", "--short", "HEAD"], proj)
+    code, out = run([hey, "context", "--date", today,
+                     "--author", "foo*tag@example.com"], env, proj)
+    check("context: an author with a regex metacharacter matches itself",
+          code == 0 and meta and meta in out, f"{meta!r}\n{out}")
+
+    # `_sh` returns an empty string for a quiet day and for a directory it could not ask
+    # at all, so `context` used to answer "nothing committed" about a project that is not a
+    # repository. `dirty` names that case; this one did not.
+    plain = tmp / "not-a-repo"
+    plain.mkdir()
+    run([hey, "add", str(plain), "--name", "plain"], env, proj)
+    code, out = run([hey, "context", "--project", "plain"], env, proj)
+    check("context: a directory that is no repository is said so, not called a quiet day",
+          code == 0 and "not a git repository" in out
+          and "nothing committed" not in out, out)
+    run([hey, "remove", "plain"], env, proj)
+
+    # A refused registration has to leave the filesystem alone. The duplicate check used to
+    # run after `--init` had already written the ledger and made its parent directories.
+    twin_root = tmp / "twin-root"
+    twin_root.mkdir()
+    run([hey, "add", str(twin_root), "--name", "twin-one"], env, proj)
+    code, out = run([hey, "add", str(twin_root), "--name", "twin-two", "--init"], env, proj)
+    check("add: a refused duplicate writes no ledger",
+          code != 0 and not (twin_root / "TASKS.local.md").exists(), out)
+    run([hey, "remove", "twin-one"], env, proj)
+
+    # Outside every registered project these three used to loop over an empty list and exit
+    # 0 with nothing printed, which reads exactly like a clean answer. `dirty` is the one
+    # that matters: silence there is indistinguishable from "nothing is at risk".
+    for name in ("dirty", "context", "draft-log"):
+        code, out = run([hey, name, "--scope", "current"], env, tmp)
+        check(f"{name}: fails outside every registered project",
+              code != 0 and ("not a registered project" in out
+                             or "not inside a git repository" in out), out)
+
+    # `--all` reads every ref the repository has, so every worktree reported the whole
+    # project and the same commit was printed once per worktree. The fixture has a linked
+    # worktree, which is exactly the shape that doubled.
+    # `--author` is passed rather than left to the fallback: the fixture sets its identity
+    # through `GIT_AUTHOR_EMAIL`, not `git config`, so the default filter matches nothing
+    # here and both checks below would pass over an empty report.
+    ctx = [hey, "context", "--date", today, "--author", "selftest@example.com"]
+    code, out = run(ctx, env, proj)
+    shas = [ln.split()[1] for ln in out.split(chr(10)) if ln.strip().startswith("commit ")]
+    check("context: a commit is reported once, not once per worktree",
+          code == 0 and shas and len(shas) == len(set(shas)), f"{shas}\n{out}")
+
+    # The day being reconstructed is usually not today, and by then the branch the work was
+    # done on is often not checked out anywhere. Reading each worktree's HEAD answers
+    # nothing for that, which is the case this command exists for.
+    git("checkout", "-q", "-b", "left-behind")
+    (proj / "left.txt").write_text("committed here, then walked away\n")
+    git("add", "-A")
+    git("commit", "-qm", "left behind on a branch")
+    left = _sh_out(["git", "rev-parse", "--short", "HEAD"], proj)
+    git("checkout", "-q", "main")
+    code, out = run(ctx, env, proj)
+    check("context: a commit on a branch no worktree has checked out is still reported",
+          code == 0 and left and left in out, f"{left!r}\n{out}")
+
+    # Pushed and then the local branch deleted: the commit is reachable only through a
+    # remote-tracking ref. Narrowing the traversal to local refs drops it, and this is the
+    # ordinary end of a merged branch. What keeps a colleague's commits out is the author
+    # filter, not the ref selection.
+    git("checkout", "-q", "-b", "pushed-then-gone")
+    (proj / "gone.txt").write_text("pushed, then the local branch went away\n")
+    git("add", "-A")
+    git("commit", "-qm", "only a remote ref holds this")
+    gone = _sh_out(["git", "rev-parse", "--short", "HEAD"], proj)
+    git("push", "-q", "-u", "origin", "pushed-then-gone")
+    git("checkout", "-q", "main")
+    git("branch", "-D", "pushed-then-gone")
+    code, out = run(ctx, env, proj)
+    check("context: a commit only a remote-tracking ref still holds is reported",
+          code == 0 and gone and gone in out, f"{gone!r}\n{out}")
+
+    # A `[branch ...]` marker naming a branch that only a non-`origin` remote carries was
+    # reported as naming a branch git does not have, because the normalisation stripped the
+    # one prefix. The ref is written directly: what is being tested is the prefix handling,
+    # not fetching.
+    git("remote", "add", "upstream", str(origin))
+    git("update-ref", "refs/remotes/upstream/only-upstream",
+        _sh_out(["git", "rev-parse", "HEAD"], proj))
+    ledger_path = proj / "TASKS.local.md"
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **Second item**", "- [ ] **Second item** [branch only-upstream]", 1))
+    # `%(refname:short)` gives the shortest unambiguous name, so a local branch named
+    # `upstream/paired` pushes the tracking ref to print as `remotes/upstream/paired`, and
+    # a prefix test against `upstream/` then misses it. Full refs carry no such ambiguity.
+    git("branch", "upstream/paired")
+    git("update-ref", "refs/remotes/upstream/paired",
+        _sh_out(["git", "rev-parse", "HEAD"], proj))
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **Second item**", "- [ ] **Second item** [branch paired]", 1))
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: a tracking ref whose short name is disambiguated still resolves",
+          "paired" not in out.split("marker(s) name a branch")[-1][:200], out)
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **Second item** [branch paired]", "- [ ] **Second item**", 1))
+
+    # `refs/remotes/<remote>/HEAD` is a symbolic ref. Stripped like a branch it coins a
+    # bare `HEAD`, and `doctor` then calls a `[branch HEAD]` marker resolvable although git
+    # refuses `HEAD` as a branch name outright.
+    git("update-ref", "--no-deref", "refs/remotes/upstream/HEAD",
+        _sh_out(["git", "rev-parse", "HEAD"], proj))
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **Second item**", "- [ ] **Second item** [branch HEAD]", 1))
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: a remote's symbolic HEAD coins no branch alias",
+          "HEAD" in out.split("marker(s) name a branch")[-1][:200], out)
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **Second item** [branch HEAD]", "- [ ] **Second item**", 1))
+
+    # And the bare alias comes from the tracking refs only. Derived from every known name,
+    # a *local* branch called `upstream/foo` would contribute a bare `foo` that exists
+    # nowhere, and the check would then accept a marker naming nothing at all.
+    git("branch", "upstream/local-only")
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **First item**", "- [ ] **First item** [branch local-only]", 1))
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: a local branch that looks like a remote one coins no bare alias",
+          "local-only" in out.split("marker(s) name a branch")[-1][:200], out)
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "- [ ] **First item** [branch local-only]", "- [ ] **First item**", 1))
+
+    code, out = run([hey, "doctor"], env, proj)
+    check("doctor: a branch only a non-origin remote has is not called missing",
+          "only-upstream" not in out.split("marker(s) name a branch")[-1][:200], out)
+
     # A squash merge leaves the branch holding commits the base never saw while the content
     # is fully merged. Reproduced by committing on a branch, then squashing that same
     # content onto the base: `dirty` must stop calling it unpushed, and `doctor` must call
