@@ -29,6 +29,12 @@ name: codex-review-gate
 # 👍 로만 끝난 PR 은 `@codex review` 코멘트를 한 번 달면 된다. 불러서 답하게 하면 코덱스는
 # 커밋 SHA 를 실은 코멘트로 답하고, 그건 추론 없이 읽을 수 있다.
 #
+# 그 코멘트를 이 워크플로가 대신 달아 보려고 했고, 안 된다. 코덱스는 코멘트를 단 GitHub
+# 계정을 자기 계정에 매핑하는데 `github-actions[bot]` 에는 매핑할 계정이 없다. 시도하면
+# 7 초 만에 이렇게 답한다:
+#   "To use Codex here, create a Codex account and connect to github"
+# 그래서 이 한 번은 사람이 쳐야 한다.
+#
 # 신호는 잡의 성패가 아니라 **커밋 상태(commit status)** 다. 이유:
 # 코멘트·리뷰 이벤트로 돈 실행은 GITHUB_SHA 가 PR 의 head 가 아니라서
 # 잡이 만드는 체크런이 엉뚱한 커밋에 붙는다. 커밋 상태는 head SHA 에 직접 쏘고
@@ -172,17 +178,29 @@ jobs:
           HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq '.head.sha')
           SHORT="${HEAD_SHA:0:10}"      # 본문의 `Reviewed commit:` 은 10 자로 줄인 SHA 를 싣는다
 
-          THREADS=$(gh api graphql -f query='
+          # 코덱스 것만 서버에서 걸러 온다. 걸러 오지 않으면 이 100 칸은 사람과 봇의
+          # 리뷰가 나눠 쓰는 창이라, 코덱스 리뷰 뒤에 리뷰가 100 건 쌓인 PR 에서는 이미 본
+          # head 를 못 봤다고 답하게 된다.
+          REVIEWS_JSON=$(gh api graphql -f query='
             query($owner:String!, $name:String!, $num:Int!, $bot:String!) {
               repository(owner:$owner, name:$name) {
                 pullRequest(number:$num) {
-                  # 코덱스 것만 서버에서 걸러 온다. 걸러 오지 않으면 이 100 칸은 사람과
-                  # 봇의 리뷰가 나눠 쓰는 창이라, 코덱스 리뷰 뒤에 리뷰가 100 건 쌓인
-                  # PR 에서는 이미 본 head 를 못 봤다고 답하게 된다.
                   reviews(last:100, author:$bot) {
                     nodes { author { login } commit { oid } body }
                   }
-                  reviewThreads(first:100) {
+                }
+              }
+            }' -F owner="$OWNER" -F name="$NAME" -F num="$PR_NUM" -F bot="$BOT_Q")
+
+          # 스레드는 끝까지 넘긴다. 여기에 걸러 올 인자가 없어서 첫 100 칸을 사람과 봇이
+          # 나눠 쓰고, 그 밖으로 밀려난 미해결 스레드는 존재하지 않는 것이 된다. `N` 이 0 이
+          # 되고 게이트는 **미해결이 남은 PR 에 초록을 준다**. 창을 넓히는 것으로는 못 막는다.
+          THREAD_Q='
+            query($owner:String!, $name:String!, $num:Int!, $after:String) {
+              repository(owner:$owner, name:$name) {
+                pullRequest(number:$num) {
+                  reviewThreads(first:100, after:$after) {
+                    pageInfo { hasNextPage endCursor }
                     nodes {
                       isResolved
                       isOutdated
@@ -192,16 +210,48 @@ jobs:
                   }
                 }
               }
-            }' -F owner="$OWNER" -F name="$NAME" -F num="$PR_NUM" -F bot="$BOT_Q")
+            }'
+          # 페이지는 파일에 쌓는다. 변수에 모아 `--argjson` 으로 넘기면 그 전부가 인자
+          # 하나가 되는데, 리눅스는 인자 하나를 128 KiB 로 끊는다. 스레드가 오백 개쯤 되면
+          # 거기 닿고, jq 가 `Argument list too long` 으로 뜨지도 못한다. `set -e` 라 잡이
+          # 거기서 죽고, 죽은 잡은 상태를 안 쓰므로 **직전 초록이 그대로 남는다**. 미해결
+          # 스레드를 세다가 실패해서 미해결이 없다는 답을 유지시키는 셈이다.
+          PAGES=$(mktemp)
+          CURSOR=''
+          # 상한은 무한 루프를 막기 위한 것이고, 닿았을 때 조용히 빠져나오면 안 된다. 스무
+          # 장까지 읽고도 다음 장이 남아 있으면 21 장째의 미해결 스레드는 세지 않은 채로
+          # "미해결 없음" 이 되어, 방금 페이지네이션으로 막은 거짓 초록이 상한 뒤에서 그대로
+          # 다시 난다. 끝까지 못 읽었다는 사실을 들고 나가서 아래에서 막는다.
+          for _ in $(seq 20); do
+            if [ -n "$CURSOR" ]; then
+              PAGE=$(gh api graphql -f query="$THREAD_Q" -F owner="$OWNER" -F name="$NAME" \
+                       -F num="$PR_NUM" -F after="$CURSOR")
+            else
+              PAGE=$(gh api graphql -f query="$THREAD_Q" -F owner="$OWNER" -F name="$NAME" \
+                       -F num="$PR_NUM")
+            fi
+            jq -c '.data.repository.pullRequest.reviewThreads.nodes' <<<"$PAGE" >>"$PAGES"
+            if jq -e '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' \
+                 <<<"$PAGE" >/dev/null; then
+              CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' \
+                         <<<"$PAGE")
+            else
+              # 마지막 장이다. 비워 두는 것이 "끝까지 읽었다" 의 표시다.
+              CURSOR=''
+              break
+            fi
+          done
 
           # 코드가 바뀌어 outdated 가 된 스레드도 resolve 전까지는 미해결로 센다.
           # 고쳤으면 "Resolve conversation" 을 눌러 닫으라는 뜻이다.
-          OPEN=$(jq -c --arg bot "$BOT" '
-            [ .data.repository.pullRequest.reviewThreads.nodes[]
+          # 파일 이름만 인자로 간다. 페이지마다 배열 하나씩 쌓여 있으니 `-s` 로 묶고
+          # `add` 로 이어 붙인다. 한 장도 없으면 `add` 가 null 이라 빈 배열로 받는다.
+          OPEN=$(jq -c -s --arg bot "$BOT" '
+            [ (add // [])[]
               | select(.isResolved == false)
               | select(.comments.nodes[0].author.login == $bot)
               | { path: (.path // "?"), url: .comments.nodes[0].url, outdated: .isOutdated } ]
-          ' <<<"$THREADS")
+          ' "$PAGES")
           N=$(jq 'length' <<<"$OPEN")
 
           # 1. 지적이 있을 때 남는 리뷰. head SHA 에 달린 것만 센다. 옛 커밋에 달린 리뷰는
@@ -213,26 +263,34 @@ jobs:
             [ .data.repository.pullRequest.reviews.nodes[]
               | select(.author.login == $bot)
               | select(.commit.oid == $sha or ((.body // "") | contains($short))) ] | length
-          ' <<<"$THREADS")
+          ' <<<"$REVIEWS_JSON")
 
-          # 2. 지적이 없을 때 남는 평범한 코멘트. 이쪽은 걸러 올 인자가 없어서 100 칸을
-          #    사람과 나눠 쓰고, 코멘트가 하나 달릴 때마다 이 워크플로가 다시 도는 탓에
-          #    깨끗한 결과가 창 밖으로 밀려나면 이미 본 head 를 못 봤다고 답하게 된다.
-          #    그래서 GraphQL 대신 REST 를 `--paginate` 로 끝까지 읽는다.
-          CLEAN=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
-                    --jq "[.[] | select(.user.login == \"$BOT_Q\")
-                              | select(.body | contains(\"Reviewed commit\")
-                                            and contains(\"$SHORT\"))] | length" \
-                  | jq -s 'add // 0')
+          # 코멘트는 한 번만 받아서 두 가지를 읽는다. GraphQL 대신 REST 를 `--paginate` 로
+          # 끝까지 읽는 이유는 이쪽에 걸러 올 인자가 없어서다. 100 칸을 사람과 나눠 쓰고,
+          # 코멘트가 하나 달릴 때마다 이 워크플로가 다시 도는 탓에 깨끗한 결과가 창 밖으로
+          # 밀려나면 이미 본 head 를 못 봤다고 답하게 된다.
+          COMMENTS=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
+                       --jq '.[] | {login: .user.login, body: .body}' | jq -s '.')
+
+          # 2. 지적이 없을 때 남는 평범한 코멘트.
+          CLEAN=$(jq --arg bot "$BOT_Q" --arg short "$SHORT" '
+            [ .[] | select(.login == $bot)
+                  | select(.body | contains("Reviewed commit") and contains($short)) ] | length
+          ' <<<"$COMMENTS")
 
           REVIEWED=$((REVIEWS + CLEAN))
 
-          if [ "$N" -gt 0 ]; then
+          if [ -n "$CURSOR" ]; then
+            # 세다 만 수로는 아무 말도 할 수 없다. 통과시키지 않는 쪽으로 끝낸다.
+            STATE=failure
+            DESC="리뷰 스레드를 끝까지 읽지 못했다(20페이지 초과). 판정 불가"
+          elif [ "$N" -gt 0 ]; then
             STATE=failure
             DESC="코덱스 미해결 코멘트 ${N}건: resolve 후 다시 실행"
           elif [ "$REVIEWED" -eq 0 ]; then
             STATE=pending
             DESC="코덱스 리뷰 대기 중"
+
           else
             STATE=success
             DESC="코덱스 미해결 코멘트 없음"
@@ -280,7 +338,8 @@ jobs:
               echo "이 커밋을 본 코덱스의 리뷰도 코멘트도 아직 없다. 도착하면 이 체크가"
               echo "갱신된다. 코덱스가 글 없이 👍 만 남긴 PR 이라면 그건 어느 커밋을 본"
               echo "것인지 적혀 있지 않아 증거로 세지 않으니, \`@codex review\` 를 한 번"
-              echo "달아라. 부르면 커밋 SHA 를 실은 코멘트로 답한다."
+              echo "달아라. 부르면 커밋 SHA 를 실은 코멘트로 답한다. 이 워크플로가 대신"
+              echo "달 수는 없다. 코덱스는 봇 계정의 멘션을 받지 않는다."
             fi
             if [ "$N" -gt 0 ]; then
               echo
