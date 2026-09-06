@@ -206,6 +206,31 @@ def day_range(on: str) -> list[str]:
     return [f"--since={on} 00:00:00", f"--until={on} 23:59:59"]
 
 
+def author_args(author: str | None) -> list[str]:
+    """`git log` flags selecting one person's commits, and only that person's.
+
+    Two ways this goes quietly wrong, and both of them put someone else's day on your
+    card:
+
+    `--author` is read as a regex. The value here comes from `user.email`, not from a
+    person writing a pattern, so a `+` or a `.` in an address has to stay a literal.
+    `-F` says so.
+
+    It is also a *substring* match, run against the whole `Name <email>` header. Plain
+    `selftest@example.com` therefore matches `notselftest@example.com` too. The angle
+    brackets are the header's own delimiters, so putting them back is what makes the
+    address match the whole address rather than the tail of a longer one.
+
+    A value with no `@` is taken for a name and left as a substring, which is what
+    someone passing `--author=KEEN` by hand is asking for.
+    """
+    if not author:
+        return []
+    if "@" in author and not author.endswith(">"):
+        author = f"<{author}>"
+    return ["-F", f"--author={author}"]
+
+
 def commit_span(root: Path, on: str, author: str | None) -> tuple | None:
     """First and last commit of one day, across every worktree, and the minutes between.
 
@@ -218,8 +243,7 @@ def commit_span(root: Path, on: str, author: str | None) -> tuple | None:
     for w in worktree_roots(root):
         cmd = ["git", "log", "--all", "--no-merges", *day_range(on),
                "--date=format:%H:%M", "--format=%cd %h"]
-        if author:
-            cmd.insert(2, f"--author={author}")
+        cmd[2:2] = author_args(author)
         for ln in _sh(cmd, w).split("\n"):
             parts = ln.split(" ", 1)
             if len(parts) == 2 and ":" in parts[0]:
@@ -1209,6 +1233,20 @@ def cmd_add(args, cfg):
     name = args.name or root.name
     base = args.base or default_base(root)
 
+    twin = next((q["name"] for q in cfg["projects"]
+                 if q["name"] != name
+                 and Path(q["root"]).expanduser().resolve() == root), None)
+    if twin:
+        # Refused rather than replaced. Dropping the other entry looks like a rename and is
+        # not one: `prior` is found by name, so the new entry would inherit none of its
+        # settings, and every recorded day is keyed by the old name and would vanish from
+        # the reports while still sitting in the file. `add` already refuses a linked
+        # worktree in these words, and for the same reason -- one repository is one project,
+        # and the way out is to say which one goes.
+        die(f"{root} is already registered as {twin}.\n"
+            f"     rename:  hey.py remove {twin}, then add it again under the new name.\n"
+            f"              recorded days are keyed by the name and stay with the old one")
+
     created = False
     if args.init and not ledger.exists():
         tpl = TEMPLATES / ("LEDGER.ko.md" if S.lang(cfg) == "ko" else "LEDGER.md")
@@ -1231,7 +1269,15 @@ def cmd_add(args, cfg):
         entry["ledger_log"] = str(Path(args.ledger_log).expanduser().resolve())
     if base:
         entry["base"] = base
-    cfg["projects"] = [p for p in cfg["projects"] if p["name"] != name]
+    # Dropped by root as well as by name. Filtering on the name alone left the same
+    # repository registered twice under two names, and then `scope all` counted its commits
+    # and its transcripts once for each, while `resolve` picked whichever sorted first. One
+    # project is one repository, which `add` already says out loud when it refuses a linked
+    # worktree; this is the same rule for the same reason.
+    # The same name is a re-registration, and that one does replace: `prior` above carried
+    # its settings across, so the entry appended below is the old one with this call's
+    # changes folded in.
+    cfg["projects"] = [q for q in cfg["projects"] if q["name"] != name]
     cfg["projects"].append(entry)
     cfg["projects"].sort(key=lambda p: p["name"])
     save_config(cfg)
@@ -1497,9 +1543,33 @@ def cmd_doctor(args, cfg):
             if markers:
                 known = set(_lines_of(_sh(["git", "branch", "--format=%(refname:short)"],
                                           root)))
-                known |= set(_lines_of(_sh(["git", "branch", "-r",
-                                            "--format=%(refname:short)"], root)))
-                known |= {b[len("origin/"):] for b in known if b.startswith("origin/")}
+                # `%(refname:short)` 는 모호하지 않은 최단 이름이라, 로컬 브랜치가
+                # `upstream/topic` 으로 있으면 원격 쪽은 `remotes/upstream/topic` 으로
+                # 나온다. 그 접두사 때문에 아래 비교가 빗나가서, 멀쩡한 마커가 없는
+                # 브랜치로 신고됐다. 전체 ref 를 받아 정확히 잘라 낸다.
+                # `refs/remotes/<remote>/HEAD` is a symbolic ref, not a branch. Left in,
+                # the strip below coins a bare `HEAD` and `doctor` then accepts a
+                # `[branch HEAD]` marker whose join is dead: git will not take `HEAD` as a
+                # branch name at all.
+                # 걸러내는 것은 각 원격의 심볼릭 HEAD 하나뿐이다. `/HEAD` 로 끝나는 것을
+                # 모두 버리면 `topic/HEAD` 라는 멀쩡한 브랜치까지 같이 사라진다. git 은
+                # 그런 이름을 허용하므로 그 마커는 유효한데 없는 것으로 신고된다.
+                symbolic = {f"refs/remotes/{rem}/HEAD" for rem in remotes(root)}
+                tracking_refs = [r for r in _lines_of(
+                    _sh(["git", "branch", "-r", "--format=%(refname)"], root))
+                    if r.startswith("refs/remotes/") and r not in symbolic]
+                tracking = {r[len("refs/remotes/"):] for r in tracking_refs}
+                known |= tracking
+                # Every remote's prefix, not `origin` alone: a repository cloned with
+                # `-o upstream` records `upstream/feature`, and stripping only `origin/`
+                # left a live marker reported as naming a branch git does not have.
+                #
+                # Stripped from the tracking refs only. Run over everything, a local branch
+                # actually called `upstream/foo` would contribute a bare `foo` that exists
+                # nowhere, and the check would then accept a marker naming nothing.
+                for rem in remotes(root):
+                    pre = f"refs/remotes/{rem}/"
+                    known |= {r[len(pre):] for r in tracking_refs if r.startswith(pre)}
                 stale = sorted({b for b, _ in markers if b not in known})
                 if stale:
                     say("warn", f"{len(stale)} `[branch ...]` marker(s) name a branch git "
@@ -2053,7 +2123,12 @@ def cmd_dirty(args, cfg):
     the shape of half the bugs in this file. Made once, and passed on.
     """
     at_risk = getattr(args, "at_risk", False)
-    for p in projects_in_scope(cfg, args.scope, args.project):
+    projs = projects_in_scope(cfg, args.scope, args.project)
+    if not projs:
+        # Silence here is indistinguishable from an all-clear, and this is the view whose
+        # whole job is to say when work is at risk. `collect` has always failed instead.
+        die_out_of_scope()
+    for p in projs:
         root = Path(p["root"])
         led = Ledger(p) if Path(p["ledger"]).exists() else None
         base = args.base or project_base(cfg, p)
@@ -2349,29 +2424,72 @@ def cmd_item(args, cfg):
 def cmd_context(args, cfg):
     """Where and what you touched yesterday (or a given day). For rebuilding context."""
     on = args.date or (date.today() - timedelta(days=1)).isoformat()
-    for p in projects_in_scope(cfg, args.scope, args.project):
+    projs = projects_in_scope(cfg, args.scope, args.project)
+    if not projs:
+        die_out_of_scope()
+    for p in projs:
         root = Path(p["root"])
-        print(f"[{p['name']}] {fmt_date(on)}")
+        # Asked once for the repository rather than once per worktree, because worktrees
+        # share one ref store and so every one of them answers the same question. `--all`
+        # was worse than redundant: it reaches the remote-tracking refs, which is how a
+        # colleague's commits arrived in a report about what you touched. `--branches` is
+        # the local refs alone, and the author filter is the one `collect` and `draft-log`
+        # already resolve the same way.
+        #
+        # `--all` is the right breadth and always was; asking it once per worktree was the
+        # bug. The day being reconstructed is usually not today, and by then the work may
+        # sit anywhere: on a branch checked out nowhere, on a detached head, or only in a
+        # remote-tracking ref because the local branch was deleted after pushing. Narrowing
+        # the refs drops one of those cases each time. What keeps somebody else's commits
+        # out is the author filter, the same one `collect` and `draft-log` resolve.
+        author = (args.author or cfg.get("author")
+                  or _sh(["git", "config", "user.email"], root))
+        if not author:
+            print(f"[{p['name']}] no git author resolved, so this counts every author's "
+                  f"commits. Pass --author to narrow it")
+        who = author_args(author)
+        log = _sh(["git", "log", "--all", *who, *day_range(on),
+                   "--format=%h %s"], root)
+        files = _sh(["git", "log", "--all", *who, *day_range(on),
+                     "--name-only", "--format="], root)
+        commits = [ln for ln in log.split("\n") if ln.strip()]
+        touched = sorted({f for f in files.split("\n") if f.strip()})
+
+        # Where the uncommitted work sits is per worktree; the commits are not, and cannot
+        # be. A commit belongs to a branch, a branch is visible from every worktree, and
+        # attributing one to the worktree it was typed in is not something git records.
+        states = []
         for w in worktree_roots(root):
-            log = _sh(["git", "log", "--all", *day_range(on),
-                       "--format=%h %s"], w)
-            files = _sh(["git", "log", "--all", *day_range(on),
-                         "--name-only", "--format="], w)
             st = _sh(["git", "status", "--short"], w)
             br = _sh(["git", "branch", "--show-current"], w)
-            touched = sorted({f for f in files.split("\n") if f.strip()})
-            if not (log or st):
-                continue
-            print(f"  {w}  ({br or 'detached'})")
-            for ln in log.split("\n")[:5]:
-                if ln.strip():
-                    print(f"    commit {ln}")
-            for f in touched[: args.files]:
-                print(f"    touched {f}")
-            if len(touched) > args.files:
-                print(f"    ... and {len(touched) - args.files} more")
             if st:
-                print(f"    {len(st.split(chr(10)))} uncommitted - this is where to pick up")
+                states.append((w, br or "detached", len(st.split("\n"))))
+
+        if not (commits or states):
+            # An empty answer and a question that could not be asked look the same from
+            # here: `_sh` hands back an empty string whether the day was quiet, the
+            # directory is not a repository, or the root has been moved away. Saying
+            # "nothing happened" for the last two is a false all-clear, so they are named,
+            # the way `dirty` names them.
+            if not root.is_dir():
+                print(f"[{p['name']}] root is gone: {root}. `hey.py remove {p['name']}`")
+            elif not git_root(root):
+                print(f"[{p['name']}] not a git repository - there are no commits to read")
+            else:
+                print(f"[{p['name']}] {fmt_date(on)}: nothing committed, nothing uncommitted")
+            continue
+        print(f"[{p['name']}] {fmt_date(on)}")
+        for ln in commits[:5]:
+            print(f"    commit {ln}")
+        if len(commits) > 5:
+            print(f"    ... and {len(commits) - 5} more commit(s)")
+        for f in touched[: args.files]:
+            print(f"    touched {f}")
+        if len(touched) > args.files:
+            print(f"    ... and {len(touched) - args.files} more")
+        for w, br, n in states:
+            print(f"  {w}  ({br})")
+            print(f"    {n} uncommitted - this is where to pick up")
 
 
 def cmd_draft_log(args, cfg):
@@ -2385,7 +2503,10 @@ def cmd_draft_log(args, cfg):
     draft, the user corrects it, and only then does anything reach the ledger -- the same
     rule that keeps a box from being ticked by a marker nobody verified.
     """
-    for p in projects_in_scope(cfg, args.scope, args.project):
+    projs = projects_in_scope(cfg, args.scope, args.project)
+    if not projs:
+        die_out_of_scope()
+    for p in projs:
         root = Path(p["root"])
         # Same resolution as code counting, for the same reason: the work log records
         # *your* days, and a shared repository is full of other people's commits.
@@ -2406,8 +2527,7 @@ def cmd_draft_log(args, cfg):
             # from anywhere else -- then deduplicated, because every other ref is shared.
             cmd = ["git", "log", "--all", "--no-merges", *span,
                    "--date=format:%Y-%m-%d", "--format=%cd %h %s"]
-            if author:
-                cmd.insert(2, f"--author={author}")
+            cmd[2:2] = author_args(author)
             for ln in _sh(cmd, w).split("\n"):
                 parts = ln.split(" ", 2)
                 if len(parts) < 3 or parts[1] in seen:
@@ -2814,6 +2934,7 @@ def main() -> None:
     sp = scoped(add("context", cmd_context, help="worktrees, branches and files touched on a date"))
     sp.add_argument("--date")
     sp.add_argument("--files", type=int, default=6)
+    sp.add_argument("--author", help="defaults to the repository's `user.email`")
     sp = add("import-tasks", cmd_import_tasks,
              help="a spec-kit tasks.md as ledger items. Prints, never writes")
     sp.add_argument("path", help="path to tasks.md")
