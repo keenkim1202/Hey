@@ -2,7 +2,19 @@ name: slack-pr-alerts
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, closed]
+    # 부모 글은 `opened` 에서만 만든다. draft 로 열린 PR 도 `opened` 를 받으므로 그때 하나가
+    # 생기고, `ready_for_review` 와 `reopened` 는 이미 있는 부모 위에 하나를 더 만들 뿐이었다.
+    # 스레드가 둘로 갈리면 코멘트는 find_ts 가 고른 쪽에만 달리고, 종료 리액션도 거기만
+    # 붙어서 나머지 한 글이 열린 PR 인 채로 채널에 남는다.
+    #
+    # 조회해서 "이미 있으면 건너뛴다" 로 막지 않는다. 조회가 실패하면 없는 것과 구별되지
+    # 않아 결국 하나 더 만들고, `opened` 실행과 `ready_for_review` 실행이 겹치면 둘 다
+    # 없다고 보고 둘 다 만든다. 만들 수 있는 자리를 하나로 줄이면 두 경우가 같이 사라진다.
+    #
+    # `reopened` 는 남는다. 부모를 만들지는 않고, 닫힐 때 붙은 리액션을 되돌린다. 빼 두면
+    # 다시 열린 PR 이 채널에서 영영 닫힌 것으로 보인다. 닫힘과 다시 열림의 순서는 위의
+    # concurrency 가 지킨다.
+    types: [opened, reopened, closed]
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
@@ -108,12 +120,19 @@ jobs:
                 echo "보정: conversations.history 실패: $(jq -r '.error' <<<"$resp")" >&2
                 return 0
               fi
+              # 두 방향 모두 본다. 종료 이벤트를 놓친 글은 `loading` 을 달고 남고,
+              # 닫혔다 다시 열린 PR 은 ✗ 나 ✅ 를 달고 남는다. 뒤엣것은 이벤트 두 개가
+              # 겹칠 때 생기는데, 그 순서는 GitHub 이 보장하지 않으므로 코드로는 못 막는다.
+              # 막는 대신 하루 한 번 현재 상태로 수렴시킨다.
               rows=$(jq -r --arg re "$re" '
                 .messages[]
-                | select((.reactions // []) | any(.name == "loading"))
+                | select((.reactions // []) | any(.name == "loading"
+                                                  or .name == "x"
+                                                  or .name == "white_check_mark"))
                 | select((.text // "") | test($re))
-                | "\(.ts) \((.text) | capture($re) | .n)"' <<<"$resp")
-              while read -r ts num; do
+                | "\(.ts) \((.text) | capture($re) | .n) \((.reactions // [])
+                    | map(.name) | join(","))"' <<<"$resp")
+              while read -r ts num marks; do
                 [ -n "${ts:-}" ] || continue
                 # 방금 종료 처리한 글은 히스토리가 아직 옛 리액션을 줄 수 있어 건너뛴다.
                 [ "$ts" = "$skip" ] && continue
@@ -121,10 +140,18 @@ jobs:
                           -H "Accept: application/vnd.github+json" \
                           "https://api.github.com/repos/$REPO/pulls/$num")
                 state=$(jq -r '.state // ""' <<<"$pr")
-                [ "$state" = "closed" ] || continue
-                merged=$(jq -r '.merged // false' <<<"$pr")
-                close_react "$ts" "$merged"
-                echo "보정: #$num 은 이미 닫혀 있어 이모지를 교체함 (merged=$merged)."
+                if [ "$state" = "closed" ]; then
+                  case ",$marks," in *,loading,*) ;; *) continue ;; esac
+                  merged=$(jq -r '.merged // false' <<<"$pr")
+                  close_react "$ts" "$merged"
+                  echo "보정: #$num 은 이미 닫혀 있어 이모지를 교체함 (merged=$merged)."
+                else
+                  case ",$marks," in *,x,*|*,white_check_mark,*) ;; *) continue ;; esac
+                  react remove white_check_mark "$ts"
+                  react remove x "$ts"
+                  react add loading "$ts"
+                  echo "보정: #$num 은 열려 있어 종료 표시를 되돌림."
+                fi
               done <<<"$rows"
               cursor=$(jq -r '.response_metadata.next_cursor // ""' <<<"$resp")
               [ -z "$cursor" ] && break
@@ -148,32 +175,84 @@ jobs:
           # URL 만으로 찾으면 pull/1 이 pull/12 에 걸린다.
           MARKER="<$PR_URL|"
 
-          # ── PR 종료: 새 글 없이 부모 메시지의 이모지만 교체 ─────────────
+          # ── PR 종료/재오픈: 새 글 없이 부모 메시지의 이모지만 맞춘다 ────
+          #
+          # 이벤트가 말하는 상태가 아니라 **지금 상태**를 API 에 물어서 맞춘다. 닫힘과 다시
+          # 열림이 몇 초 안에 겹치면 두 실행이 나란히 도는데, GitHub 은 같은 concurrency
+          # 그룹의 실행 순서를 보장하지 않는다고 문서에 적어 두었다. 그래서 줄을 세워도
+          # 늦게 도착한 `closed` 가 마지막에 ✗ 를 찍어 열린 PR 이 닫힌 것으로 남을 수 있다.
+          # 둘 다 현재 상태를 읽고 쓰면 어느 쪽이 마지막이든 결과가 같다.
+          ACTION=$(jq -r '.action' "$EV")
           if [ "$EVENT_NAME" = "pull_request" ] && \
-             [ "$(jq -r '.action' "$EV")" = "closed" ]; then
-            TS=$(find_ts)
-            if [ -z "$TS" ]; then
-              echo "부모 메시지를 못 찾음 (#$PR_NUM). 리액션 생략." >&2
+             { [ "$ACTION" = "closed" ] || [ "$ACTION" = "reopened" ]; }; then
+            TS=$(find_ts) && LOOKED=1 || LOOKED=0
+            # 조회가 끝난 **뒤에** 상태를 읽는다. `find_ts` 는 요청을 다섯 번까지 하므로,
+            # 그 앞에서 읽으면 그 사이에 다시 열린 PR 을 닫힌 것으로 알고 쓴다. 이렇게 해도
+            # 원자적이지는 않다. 읽고 쓰는 사이는 여전히 열려 있고, GitHub 이 실행 순서를
+            # 보장하지 않는 이상 코드로 닫을 수 있는 창이 아니다. 남는 어긋남은 위의
+            # `reconcile` 이 하루 한 번 현재 상태로 되돌린다.
+            NOW=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq '.state + " " + (.merged|tostring)')
+            if [ "$LOOKED" = 0 ]; then
+              # 조회 자체가 실패했다. 없는 것과 구별되지 않으므로 아무것도 하지 않고 끝낸다.
+              # 여기서 빠져나가지 않으면 아래 부모 생성으로 흘러가서, 막으려던 중복을
+              # 조회 실패 한 번으로 만들어 낸다.
+              echo "부모 메시지를 조회하지 못함 (#$PR_NUM). 리액션 생략." >&2
+              exit 0
+            elif [ -z "$TS" ]; then
+              # 확실히 없다. 다시 열린 PR 이라면 새 부모를 만든다. 그러지 않으면 ✗ 를 단
+              # 옛 글만 남아 영영 닫힌 것으로 보이고, 하루 한 번 도는 보정은 `loading` 이
+              # 달린 글만 고르므로 그 상태를 되돌리지 못한다.
+              if [ "${NOW%% *}" = "open" ]; then
+                echo "부모 메시지가 없어 다시 만든다 (#$PR_NUM)." >&2
+              else
+                echo "부모 메시지를 못 찾음 (#$PR_NUM). 리액션 생략." >&2
+                reconcile ""
+                exit 0
+              fi
+            elif [ "${NOW%% *}" = "open" ]; then
+              react remove white_check_mark "$TS"
+              react remove x "$TS"
+              react add loading "$TS"
+              exit 0
             else
-              close_react "$TS" "$(jq -r '.pull_request.merged' "$EV")"
+              close_react "$TS" "${NOW##* }"
+              # 이 PR 을 base 로 삼던 스택 PR 이 같이 닫혔을 수 있다.
+              reconcile "$TS"
+              exit 0
             fi
-            # 이 PR 을 base 로 삼던 스택 PR 이 같이 닫혔을 수 있다.
-            reconcile "$TS"
-            exit 0
           fi
 
           # ── 메시지 본문 만들기 ──────────────────────────────────────────
           MSG=$(jq -n --arg event "$EVENT_NAME" --arg repo "$REPO" \
                       --slurpfile e "$EV" '
+            # Slack mrkdwn 에서 `<...>` 는 문법이다. `<!channel>` 은 워크스페이스 전체
+            # 호출이고 `<@U…>` 는 개인 호출이라, PR 제목이나 코멘트 본문에 적어 넣으면
+            # 그대로 실행된다. 이 워크플로는 공개 저장소에서 아무나 남길 수 있는 글을 Slack
+            # 시크릿을 들고 전달하므로, 남이 쓴 문자열은 전부 여기를 먼저 통과한다.
+            # `&` 를 맨 먼저 바꿔야 한다. 나중에 하면 `&lt;` 가 `&amp;lt;` 가 된다.
+            def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+
             # GitHub 마크다운 → Slack mrkdwn. 봇 코멘트의 배지/HTML 이 그대로 노출되는 걸 막는다.
+            # 이스케이프가 먼저다. 그래서 아래에서 HTML 을 걷어낼 때 찾는 것도 `<` 가 아니라
+            # `&lt;` 다. 마크다운 링크에서 만들어 내는 `<url|글자>` 는 이 뒤에 생기므로 살아남는다.
             def md2slack:
-                gsub("(?s)<!--.*?-->"; "")
+                esc
+              | gsub("(?s)&lt;!--.*?--&gt;"; "")
               | gsub("!\\[(?<a>[^\\]]*)\\]\\([^)]*\\)";
                   (if (.a | length) > 0
                    then "[" + (.a | sub("\\s*(Badge|badge)\\s*$"; "")) + "]"
                    else "" end))
-              | gsub("</?[a-zA-Z][a-zA-Z0-9]*(\\s[^>]*)?>"; "")
-              | gsub("\\[(?<t>[^\\]]*)\\]\\((?<u>[^)\\s]+)\\)"; "<\(.u)|\(.t)>")
+              # 속성까지 삼키되 첫 `&gt;` 에서 멈춘다. `[^&]*` 로 막으면 `&` 가 든 속성이
+              # 있을 때, 이를테면 `?a=1&b=2` 같은 흔한 주소에서 여는 태그만 살아남아 화면에
+              # 그대로 노출된다. 이스케이프를 먼저 하기 때문에 `&` 는 `&amp;` 로 바뀌어 있다.
+              | gsub("&lt;/?[a-zA-Z][a-zA-Z0-9]*(\\s.*?)?&gt;"; "")
+              # 링크는 http(s) 로만 만든다. `<...|...>` 는 Slack 문법이라, 목적지를 검사하지
+              # 않으면 `[ping](!channel)` 이 `<!channel|ping>` 이 되어 이스케이프를 통과한
+              # 뒤에 전체 호출이 다시 살아난다. `esc` 는 `<`, `>`, `&` 만 보므로 `!channel`
+              # 이라는 글자에는 손대지 않는다. 그 외 목적지는 링크로 만들지 않고 글자로 남긴다.
+              | gsub("\\[(?<t>[^\\]]*)\\]\\((?<u>[^)\\s]+)\\)";
+                  (if (.u | test("^https?://")) then "<\(.u)|\(.t)>"
+                   else "\(.t) (\(.u))" end))
               | gsub("\\*\\*"; "*")
               | gsub("(?m)^\\s{0,3}#{1,6}\\s+(?<h>.*)$"; "*\(.h)*")
               | gsub("(?m)^\\s*[-*_]{3,}\\s*$"; "")
@@ -196,7 +275,8 @@ jobs:
                elif $event == "pull_request_review_comment" then
                  { icon: "💬", kind: "코드 코멘트", t: $p.pull_request.title,
                    url: $p.comment.html_url, who: $p.comment.user.login,
-                   body: ("`" + ($p.comment.path // "?") + "`\n" + (($p.comment.body // "") | md2slack)),
+                   body: ("`" + (($p.comment.path // "?") | esc) + "`\n"
+                          + (($p.comment.body // "") | md2slack)),
                    num: $p.pull_request.number }
                else
                  { icon: "💬", kind: "PR 코멘트", t: $p.issue.title,
@@ -204,7 +284,7 @@ jobs:
                    body: (($p.comment.body // "") | md2slack), num: $p.issue.number }
                end) as $m
             | { m: $m, blocks: ([ { type: "section", text: { type: "mrkdwn",
-                  text: "\($m.icon) *\($m.kind)* · `\($repo)`\n<\($m.url)|#\($m.num) \($m.t)>\nby *\($m.who)*" } } ]
+                  text: "\($m.icon) *\($m.kind)* · `\($repo)`\n<\($m.url)|#\($m.num) \($m.t | esc)>\nby *\($m.who | esc)*" } } ]
                 + (if ($m.body | length) > 0
                    then [{ type: "section", text: { type: "mrkdwn", text: ($m.body[0:600]) } }]
                    else [] end)) }
@@ -213,7 +293,9 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             # 부모 글. fallback text 에 "<URL|" 를 넣어야 나중에 find_ts 가 찾는다.
-            FALLBACK=$(jq -r --arg r "$REPO" '"🆕 PR 생성 · \($r)#\(.m.num) <\(.m.url)|#\(.m.num) \(.m.t)>"' <<<"$MSG")
+            FALLBACK=$(jq -r --arg r "$REPO" '
+              def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+              "🆕 PR 생성 · \($r)#\(.m.num) <\(.m.url)|#\(.m.num) \(.m.t | esc)>"' <<<"$MSG")
             RESP=$(slack chat.postMessage "$(jq -n --arg c "$SLACK_CHANNEL_ID" --arg t "$FALLBACK" \
                      --argjson b "$BLOCKS" '{channel:$c, text:$t, blocks:$b, unfurl_links:false}')")
             [ "$(jq -r '.ok' <<<"$RESP")" = "true" ] || { echo "$RESP" >&2; exit 1; }
