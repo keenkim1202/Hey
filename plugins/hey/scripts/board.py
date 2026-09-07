@@ -47,7 +47,9 @@ def code_lines(project: dict, on: str, author: str | None) -> dict:
         cmd = ["git", "log", "--all", "--no-merges", *day_range(on),
                "--format=__C__%H", "--numstat"]
         if author:
-            cmd.append(f"--author={author}")
+            # `--author` 는 정규식으로 읽힌다. 이건 `user.email` 에서 온 신원이라
+            # 문자열로 못박는다. 로컬 파트의 `+` 나 `*` 가 패턴이 되면 자기 커밋을 놓친다.
+            cmd += ["-F", f"--author={author}"]
         out = _sh(cmd, w)
         cur = None
         for ln in out.split("\n"):
