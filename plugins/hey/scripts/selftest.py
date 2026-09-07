@@ -486,6 +486,9 @@ from pathlib import Path
 # read. Set before the import, since the paths bind there.
 home = Path(tempfile.mkdtemp())
 os.environ['HEY_HOME'] = str(home)
+# The narrowest card the tool allows. The command below has to survive the fold there, and
+# the width binds at import.
+os.environ['HEY_WIDTH'] = '72'
 sys.path.insert(0, {here!r})
 import hey
 
@@ -525,6 +528,87 @@ hit = [r for r in hey.read_stats() if r['date'] == TARGET]
 assert hit, out
 assert 'code' in hit[0], (hit[0], out)          # the day was collected
 assert 'cb_done' not in hit[0], (hit[0], out)   # and its box state was left alone
+"""
+
+
+UNCOLLECTED_PROBE = """
+import json, os, sys, tempfile
+from datetime import date, timedelta
+from pathlib import Path
+
+# Its own history: this needs a day with no record sitting after one that has a record, and
+# the shared fixture collects every day it touches.
+home = Path(tempfile.mkdtemp())
+os.environ['HEY_HOME'] = str(home)
+# The narrowest card the tool allows. The command below has to survive the fold there, and
+# the width binds at import.
+os.environ['HEY_WIDTH'] = '72'
+sys.path.insert(0, {here!r})
+import hey, board
+import strings as S
+
+proj = Path({proj!r})
+(home / 'config.json').write_text(json.dumps(dict(projects=[
+    dict(name='fixture', root=str(proj), ledger=str(proj / 'TASKS.local.md'))])))
+
+# The output section shows whenever any day in the fourteen behind the focus has a record.
+# So one record yesterday and none today is enough to render it, and the three figures used
+# to come out as zero: a day spent doing nothing, reported about a day nothing was asked
+# about. Code and tokens can still be fetched for it, which is what the line has to say.
+# `wrap` focuses on the day it is given; `brief` steps back to the previous workday, which
+# would move the target under the test.
+focus = date.today().isoformat()
+prev = (date.today() - timedelta(days=3)).isoformat()
+hey.write_stats([dict(date=prev, project='fixture', cb_done=0, cb_total=1,
+                      items=[dict(k='x', ai=0.0, state='todo',
+                                  closed=0, boxes=1, earned=0.0)],
+                      earned_ai=0.0,
+                      code=dict(added=3, deleted=1, commits=1),
+                      tokens={{'in': 5, 'out': 5, 'cache_read': 0,
+                               'cache_write': 0, 'turns': 1}})])
+
+cfg = hey.load_config()
+text = chr(10).join(board.card(cfg['projects'][0], cfg, focus, 'wrap'))
+# Sliced to the output block: the metric labels are ordinary words that appear elsewhere
+# on the card ('closed' rides on the checklist and effort rows), so a whole-card search
+# would report them present whatever this section did.
+block = text.split(chr(128200))[1].split(chr(10) + chr(10))[0]
+assert S.card('uncollected', board.LANG) in block, block
+# Checked as rows rather than as words: the line itself says which two metrics can be
+# read back, so a substring search finds their labels in the very message that replaces
+# them.
+labels = [board.METRICS[m][0] for m in ('ai', 'code', 'tokens')]
+rows = [ln for ln in block.split(chr(10))
+        if any(ln.strip().startswith(l) for l in labels)]
+assert not rows, (rows, block)
+
+# The card has a width contract and this row only appears on a day with no record, so
+# the rendered-row check never reaches it.
+wide = [ln for ln in block.split(chr(10)) if board._w(ln) > board.WIDTH]
+assert not wide, (board.WIDTH, wide)
+
+# The safety flag has to survive the fold on the first line. Somebody copying the command
+# line by line runs that one first, and without the flag it is a plain backdated collect,
+# which is the corruption the hint exists to route around.
+# One line, carrying the fact and no command. A command folds at this width and a folded
+# command cannot be copied, and a pointer to `doctor` promises an answer it does not always
+# have: its gap list comes from the work log, and a day can hold commits and no entry.
+assert len([ln for ln in block.split(chr(10)) if ln.strip()]) == 2, block
+assert '`' not in block and '--' not in block, block
+
+# A row that `--metrics-only` wrote has code and tokens and no boxes. Calling it the
+# baseline is wrong twice over: it never recorded box state, and the real first record of
+# it is still ahead, because `record_progress` passes over rows carrying no items.
+hey.merge_stats(focus, 'fixture', dict(code=dict(added=1, deleted=0, commits=1),
+                                       tokens={{'in': 1, 'out': 1, 'cache_read': 0,
+                                                'cache_write': 0, 'turns': 1}}))
+cfg = hey.load_config()
+text2 = chr(10).join(board.card(cfg['projects'][0], cfg, focus, 'wrap'))
+block2 = text2.split(chr(128200))[1].split(chr(10) + chr(10))[0]
+closed_row = [ln for ln in block2.split(chr(10))
+              if ln.strip().startswith(board.METRICS['ai'][0])]
+assert closed_row, block2
+assert board.S.card('baseline', board.LANG) not in closed_row[0], (closed_row, block2)
 """
 
 
@@ -1763,6 +1847,27 @@ def removed_feature_checks() -> list:
     return out
 
 
+def backfill_guidance_checks() -> list:
+    """No skill may tell the agent to collect a past day without `--metrics-only`.
+
+    Plain `collect --date <a past day>` refuses only when a *later* day is already
+    recorded, so a gap with nothing after it takes today's boxes and stamps them on that
+    date. The scripts were taught the safe flag and `hey-ledger` was still carrying the old
+    instruction, which is the file the other skills are told to read first.
+    """
+    out = []
+    plugin = HERE.parent
+    for path in sorted(plugin.glob("skills/*/SKILL.md")) + sorted(plugin.glob("commands/*.md")):
+        for ln in path.read_text(encoding="utf-8").split("\n"):
+            # Only invocations, which name the script. Prose warning against the unsafe
+            # form says "plain `collect`" and would otherwise report itself.
+            if ("board.py collect" in ln and "--date" in ln
+                    and "--metrics-only" not in ln):
+                out.append((f"{path.relative_to(plugin)} tells a past-day collect without "
+                            f"`--metrics-only`", ln.strip()))
+    return out
+
+
 def static_checks() -> list:
     """Manifest and frontmatter checks. No fixture, no subprocess, no network.
 
@@ -1902,6 +2007,8 @@ def main() -> int:
             ATOMIC_WRITE_PROBE.format(here=str(HERE)),
         "a row written before versioning keeps saying so":
             SCHEMA_PROBE.format(here=str(HERE)),
+        "a day nobody collected is not a day of zeros":
+            UNCOLLECTED_PROBE.format(here=str(HERE), proj=str(proj)),
         "the guard on backdated box state is inside the lock, not before it":
             COLLECT_LOCK_PROBE.format(here=str(HERE), board=board, proj=str(proj)),
         "eight recorders at once lose no day between them":
@@ -2031,7 +2138,9 @@ def main() -> int:
                          ("docs claim no removed feature", removed_feature_checks),
                          ("every read and write names its encoding", encoding_checks),
                          ("the pinned version has a changelog entry", version_checks),
-                         ("no skill writes what the wording rules forbid", wording_checks)):
+                         ("no skill writes what the wording rules forbid", wording_checks),
+                         ("no skill recovers a past day unsafely",
+                          backfill_guidance_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)
@@ -2291,6 +2400,17 @@ def main() -> int:
     check("remove: unregisters and keeps the ledger",
           code == 0 and "unregistered: second" in out, out)
     check("remove: ledger survived", (second / "TASKS.local.md").exists(), "")
+
+    # A row with no box state has two causes and the receipt named only one of them. A
+    # project whose ledger is not on disk was told a later day is already recorded, which
+    # sends the reader to look at a history that is not the problem.
+    noledger = tmp / "no-ledger"
+    noledger.mkdir()
+    run([hey, "add", str(noledger), "--name", "no-ledger"], env, proj)
+    code, out = run([board, "collect", "--project", "no-ledger"], env, proj)
+    check("collect: a missing ledger is not reported as a backdated collection",
+          code == 0 and "no ledger at" in out and "already recorded" not in out, out)
+    run([hey, "remove", "no-ledger"], env, proj)
 
     # A squash merge leaves the branch holding commits the base never saw while the content
     # is fully merged. Reproduced by committing on a branch, then squashing that same

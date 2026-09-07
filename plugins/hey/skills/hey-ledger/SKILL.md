@@ -192,9 +192,19 @@ one" — `carryover` says what is stuck and `variance` says how far off the esti
 neither answers that.
 
 **Closed work is not backfillable.** The ledger only holds its current state, so daily
-output only exists from the day `collect` starts running. Passing a past `--date` still
-gives exact code and token numbers from git and the transcripts, but **closed work prints
-as 0**. Do not hide that from the user.
+output only exists from the day `collect` starts running. Code and token numbers do come
+back exactly, from git and the transcripts, and **`--metrics-only` is how you ask for
+them**:
+
+```
+board.py collect --metrics-only --project=<name> --date <day>
+```
+
+**Never run plain `collect` with a past `--date`.** Its guard refuses only when a *later*
+day is already recorded, so a gap with nothing after it takes today's boxes and writes
+them onto that date. That is the one thing this file says cannot be undone, and the
+recovered day is the one place it is easy to do by accident. Do not hide the missing
+closed figure from the user either: the day says `not recorded`, and it stays that way.
 
 The **first record of a project is a baseline** and carries no closed figure at all — it
 prints `baseline` instead of a number. Say so plainly on day one rather than presenting it

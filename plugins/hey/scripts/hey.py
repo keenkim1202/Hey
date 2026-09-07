@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -446,6 +447,15 @@ def unpushed(worktree: Path, base: str | None) -> tuple[int, bool]:
     could have been pushed, and `doctor` and `dirty` both say so in their own words rather
     than leaving it to a count. Squash-merged branches are excluded for the same reason as
     ever -- see `already_merged`.
+
+    **What `--remotes` knows is as old as the last fetch.** A remote-tracking ref stays in
+    `refs/remotes` after the branch it mirrors is deleted upstream, so a commit that reached
+    a branch somebody has since deleted still reads as pushed here. Asking whether a remote
+    *currently* holds a commit takes a network call, and nothing else in this tool makes
+    one: the card and this view run on every session, and a lookup over the network there
+    would be paid for constantly to catch a case that needs an unmerged branch deleted
+    upstream and never pruned locally. So the honest reading of this number is "no remote
+    this clone knows of has it", and `git fetch --prune` is what keeps the two in step.
     """
     up = _sh(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
              worktree)
@@ -1468,8 +1478,15 @@ def cmd_doctor(args, cfg):
             gaps = sorted(d for d, _ in ledger.log_days() if d not in recorded)
             if gaps:
                 shown = ", ".join(gaps[:3]) + (f" and {len(gaps) - 3} more" if len(gaps) > 3 else "")
+                # The whole command, on a line nothing folds, naming the project because
+                # `--scope all` would otherwise collect whichever one the reader is standing
+                # in. `--metrics-only` is not decoration: plain `collect` on a past day only
+                # refuses when a *later* day is recorded, so a gap with nothing after it
+                # takes today's boxes and stamps them on that date.
                 say("warn", f"{len(gaps)} logged day(s) never recorded: {shown}. "
-                            f"`board.py collect --date <day>` recovers that day's code and "
+                            f"`board.py collect --metrics-only "
+                            f"--project={shlex.quote(p['name'])} --date <day>` recovers "
+                            f"that day's code and "
                             f"tokens. Closed work is not recoverable and is left alone -- "
                             f"the ledger only holds today, so writing it would move the "
                             f"baseline and zero the newer day")

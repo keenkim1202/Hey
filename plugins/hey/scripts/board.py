@@ -250,7 +250,17 @@ def cmd_collect(args, cfg):
         # the earlier day.
         with exclusive():
             later = records_after(p["name"], on)
-            if Path(p["ledger"]).exists() and not later:
+            # Kept apart because the receipt below has to name the right one. Both leave the
+            # row without box state, and reporting a missing ledger as "a later day is
+            # already recorded" sends the reader to look at a history that is not the
+            # problem.
+            have_ledger = Path(p["ledger"]).exists()
+            # Box state is skipped outright under `--metrics-only`, which is what makes
+            # recovering a past day safe to recommend. The guard below only refuses when a
+            # *later* day is already recorded, so a gap with nothing after it would sail
+            # through and stamp today's boxes onto whatever date was asked for. Code and
+            # tokens are the two that genuinely backfill, and this asks for those alone.
+            if have_ledger and not later and not args.metrics_only:
                 fields.update(record_progress(Ledger(p), on))
             elif later:
                 print(f"[{p['name']}] {fmt_date(on)} is before a day already recorded, so "
@@ -260,7 +270,9 @@ def cmd_collect(args, cfg):
             merge_stats(on, p["name"], fields)
         c, t = fields["code"], fields["tokens"]
         if "cb_done" not in fields:
-            closed = "not collected - a later day is already recorded"
+            closed = ("not collected - asked for metrics only" if args.metrics_only
+                      else "not collected - no ledger at " + p["ledger"] if not have_ledger
+                      else "not collected - a later day is already recorded")
         elif fields.get("baseline"):
             closed = "baseline - counted from the next record on"
         else:
@@ -553,7 +565,22 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
         # this file claim in its own docstring that days are no longer scored against each
         # other while still printing the highest one.
         row = next((r for r in win if r["date"] == focus), None)
-        for m in ("ai", "code", "tokens"):
+        # A day nobody collected is unknown, not measured zero. The section shows whenever
+        # any day in the fourteen behind it has a record, so a gap in the middle used to
+        # print `0.00 AI-days`, `0 lines` and `0 tokens` -- three figures that read as a day
+        # spent doing nothing, about a day nothing was ever asked about. Code and tokens
+        # backfill, so this one says how to go and get them.
+        if row is None:
+            # The fact, and nothing more. Two things were tried here and both were worse
+            # than saying less. A command folds, because the card has a fixed width, and a
+            # folded command cannot be copied: the first line alone is a different command
+            # and both lines pasted are two. Pointing at `doctor` instead promises an
+            # answer it does not always have, since its gap list comes from the work log
+            # and a day may carry commits and no entry. Recovery is written down in the
+            # README and offered by `doctor` for the days it can see; the card's job here
+            # is to stop printing a zero for a day nobody asked about.
+            out.append(f"{INDENT}{S.card('uncollected', LANG)}")
+        for m in ("ai", "code", "tokens") if row is not None else ():
             lbl, get, f, has = METRICS[m]
             # The baseline row carries no closed figure at all, and the fourth element of
             # METRICS is how that is told apart from a day that closed nothing. Reading the
@@ -561,7 +588,12 @@ def card(p: dict, cfg: dict, on: str, mode: str) -> list:
             # the one number on this card nobody can act on, and the one everybody reads as
             # a bad first day. `collect` has always said `baseline` here; the card had not.
             if row is not None and not has(row):
-                out.append(f"{INDENT}{pad(lbl, 9)}{S.card('baseline', LANG)}")
+                # A baseline says its own name. A row `--metrics-only` wrote carries code
+                # and tokens and no boxes at all, and calling that a baseline is wrong
+                # twice: it was not the first record of box state, and the real first one
+                # is still ahead, since `record_progress` passes over rows without items.
+                key = "baseline" if row.get("baseline") else "uncounted"
+                out.append(f"{INDENT}{pad(lbl, 9)}{S.card(key, LANG)}")
                 continue
             val = f(get(row) if row else 0)
             # Cost rides on the token row rather than taking one of its own: it is the
@@ -639,6 +671,8 @@ def main() -> None:
     sp = add("collect", cmd_collect, help="record today's closed/code/token totals")
     sp.add_argument("--date")
     sp.add_argument("--author", help="git author filter (default: git config user.email)")
+    sp.add_argument("--metrics-only", action="store_true", dest="metrics_only",
+                    help="code and tokens only, never box state. What recovers a past day")
 
     for name, mode, helptext in (("brief", "brief", "morning card (one call)"),
                                  ("wrap", "wrap", "end-of-day card (one call)")):

@@ -316,7 +316,11 @@ flattering number.
 - **Unpushed means no remote has it** — nothing tracked upstream, or commits past the
   upstream. A pushed branch waiting on review is not unpushed, and the card reports it
   separately rather than filing it under work about to be lost. Whether a pull request
-  exists is never checked, so nothing claims it either
+  exists is never checked, so nothing claims it either. "No remote" is read from
+  `refs/remotes`, which is as current as your last fetch: a branch deleted upstream leaves
+  its ref behind until `git fetch --prune` removes it, and until then its commits read as
+  pushed. Asking the remote directly would put a network call on a path that runs every
+  session, which nothing else here does
 - **Commits absent from the base are measured against the remote's default branch**,
   detected at registration and stored as `base`. When it cannot be resolved, the report says so instead
   of printing zero — a wrong base makes the comparison fail silently, which is how work
