@@ -54,6 +54,36 @@ Claude Code has these already; Codex receives them when the pinned version is ne
 
 ### Fixes worth naming
 
+- **An absence is no longer drawn as a zero.** The output section appears whenever any day
+  in the fourteen behind it has a record, so a day nobody collected printed `0.00 AI-days`,
+  `0 lines` and `0 tokens`: three figures that read as a day spent doing nothing, about a
+  day nothing was ever asked about. It says the day was not recorded, and how to read it
+  back. It says that and nothing more: a command there folds, because the card has a fixed
+  width, and a folded command cannot be copied; and a pointer to `doctor` promises an
+  answer it does not always have, since its gap list comes from the work log and a day can
+  carry commits and no entry.
+- **`collect --metrics-only` is what recovers a past day.** It takes code and tokens and
+  never touches box state. The plain command was the wrong advice and `doctor` had been
+  giving it: the guard there refuses only when a *later* day is already recorded, so a gap
+  with nothing after it takes today's boxes and stamps them on whatever date was asked for,
+  which is the one thing this file says cannot be undone. `doctor` names the flag now, and
+  the project, since `--scope all` would otherwise collect whichever one the reader happens
+  to be standing in. A row written that way carries code and tokens and no boxes, and the
+  card no longer calls it a baseline: it never recorded box state, and the real first
+  record of it is still ahead. `hey-ledger`, which the other skills are told to read first,
+  had been giving an agent the unsafe instruction in as many words; it names the flag now,
+  and the self-test refuses any skill that spells a past-day collect without it.
+  `collect`'s own receipt had a matching confusion,
+  reporting a project whose ledger is not on disk as one whose box state was skipped because
+  a later day is already recorded. Two causes, one message, and the wrong one sent the
+  reader to a history that was not the problem.
+- **Unpushed is only as current as the last fetch, and now says so.** A remote-tracking ref
+  survives the branch it mirrors being deleted upstream, so a commit on a branch somebody
+  has since removed still reads as pushed. Asking a remote directly needs a network call and
+  nothing in this tool makes one, on purpose: this view and the card run every session. The
+  measure is unchanged and the claim around it is narrower, in the docstring and in both
+  READMEs.
+
 - **The guard against backdating box state now sits inside the lock it was standing next
   to.** `collect` and `snapshot` both read the recorded history to decide whether a day may
   carry box state, and read it a second time to decide whether the day is a baseline, and
