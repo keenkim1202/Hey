@@ -315,7 +315,12 @@ jobs:
               | sub("^\\s+"; "") | sub("\\s+$"; "");
             ($e[0]) as $p
             | (if $event == "pull_request" then
-                 { icon: "🆕", kind: "PR 생성", t: $p.pull_request.title,
+                 # 여기로 오는 `pull_request` 는 `opened`, 그리고 부모 글이 사라져
+                 # 다시 만들어야 하는 `reopened` 둘이다. 둘을 같은 말로 적으면 재오픈된
+                 # PR 이 방금 생긴 것으로 보인다.
+                 { icon: (if $p.action == "reopened" then "🔄" else "🆕" end),
+                   kind: (if $p.action == "reopened" then "PR 재오픈" else "PR 생성" end),
+                   t: $p.pull_request.title,
                    url: $p.pull_request.html_url, who: $p.sender.login,
                    body: (($p.pull_request.body // "") | md2slack), num: $p.pull_request.number }
                elif $event == "pull_request_review" then
@@ -338,7 +343,13 @@ jobs:
                    url: $p.comment.html_url, who: $p.comment.user.login,
                    body: (($p.comment.body // "") | md2slack), num: $p.issue.number }
                end) as $m
-            | { m: $m, blocks: ([ { type: "section", text: { type: "mrkdwn",
+            # 부모 글의 fallback text 도 여기서 만든다. 아래에서 따로 조립하면 `esc` 를
+            # 한 번 더 정의해야 하고, 그러면 이스케이프 규칙이 두 곳에 산다. 한쪽만 고치는
+            # 날이 온다. `<\($m.url)|` 는 나중에 `find_ts` 가 이 글을 찾는 표지이므로
+            # 형태를 바꾸면 안 된다.
+            | { m: $m,
+                fallback: "\($m.icon) \($m.kind) · \($repo)#\($m.num) <\($m.url)|#\($m.num) \($m.t | esc)>",
+                blocks: ([ { type: "section", text: { type: "mrkdwn",
                   text: "\($m.icon) *\($m.kind)* · `\($repo)`\n<\($m.url)|#\($m.num) \($m.t | esc)>\nby *\($m.who | esc)*" } } ]
                 + (if ($m.body | length) > 0
                    then [{ type: "section", text: { type: "mrkdwn", text: ($m.body[0:600]) } }]
@@ -359,10 +370,7 @@ jobs:
               echo "부모 글이 이미 있다 (#$PR_NUM). 새로 만들지 않는다."
               exit 0
             fi
-            # 부모 글. fallback text 에 "<URL|" 를 넣어야 나중에 find_ts 가 찾는다.
-            FALLBACK=$(jq -r --arg r "$REPO" '
-              def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
-              "🆕 PR 생성 · \($r)#\(.m.num) <\(.m.url)|#\(.m.num) \(.m.t | esc)>"' <<<"$MSG")
+            FALLBACK=$(jq -r '.fallback' <<<"$MSG")
             RESP=$(slack chat.postMessage "$(jq -n --arg c "$SLACK_CHANNEL_ID" --arg t "$FALLBACK" \
                      --argjson b "$BLOCKS" '{channel:$c, text:$t, blocks:$b, unfurl_links:false}')")
             [ "$(jq -r '.ok' <<<"$RESP")" = "true" ] || { echo "$RESP" >&2; exit 1; }
