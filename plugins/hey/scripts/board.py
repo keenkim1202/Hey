@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import strings as S  # noqa: E402
 from hey import (  # noqa: E402
-    Ledger, card_width, day_range, die_out_of_scope, fmt_date,
+    Ledger, author_args, card_width, day_range, die_out_of_scope, fmt_date,
     exclusive, load_config, merge_stats, clip_to, project_base, projects_in_scope,
     read_stats, record_progress, records_after, today_str, unpushed, worktree_roots, _sh,
 )
@@ -46,8 +46,7 @@ def code_lines(project: dict, on: str, author: str | None) -> dict:
     for w in worktree_roots(root):
         cmd = ["git", "log", "--all", "--no-merges", *day_range(on),
                "--format=__C__%H", "--numstat"]
-        if author:
-            cmd.append(f"--author={author}")
+        cmd += author_args(author)
         out = _sh(cmd, w)
         cur = None
         for ln in out.split("\n"):
