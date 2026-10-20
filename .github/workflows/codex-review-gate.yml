@@ -7,10 +7,19 @@ name: codex-review-gate
 #   pending  코덱스가 이 head SHA 를 아직 리뷰하지 않았다. 기다려라.
 #   success  이 head SHA 를 리뷰했고 미해결이 없다.
 #
-# "리뷰했다" 의 증거로 세는 것은 둘이다. 둘 다 본문에 `Reviewed commit: <10자 SHA>` 를
-# 싣고 있어서, 어느 커밋을 본 것인지가 글에 적혀 있다.
-#   1. 지적이 있으면  review 객체
-#   2. 없으면        평범한 이슈 코멘트
+# "리뷰했다" 의 증거로 세는 것은 셋이다. 어느 커밋을 본 것인지가 적혀 있어야 센다.
+#   1. 지적이 있으면  review 객체.            본문에 `Reviewed commit: <10자 SHA>`
+#   2. 없으면        평범한 이슈 코멘트.      본문에 같은 줄
+#   3. 요약 코멘트의 `codex-review-state:v1` JSON. 전체 SHA 와 상태가 들어 있다
+#
+# 3 은 코덱스가 새로 쓰기 시작한 형식이고 `Reviewed commit` 이라는 문자열이 없다. 지적이
+# 있는 리뷰는 review 객체가 커밋을 들고 오므로 1 로 여전히 잡히지만, **지적이 없는 리뷰**는
+# 글 하나로 끝나므로 2 의 문자열이 사라지면 증거가 통째로 없어진다. 늘 그렇듯 깨끗한 PR 을
+# 막는 방향이다. 셋 다 보고 하나만 맞으면 되게 한다. 1 과 2 를 남기는 것은 형식이 또 바뀔
+# 수 있어서이고, 3 을 더하는 것은 지금 형식이 그것이어서다.
+#
+# JSON 쪽은 `status` 가 `running` 이면 세지 않는다. 그 글은 리뷰를 시작할 때 올라오고 끝나면
+# 그 자리에서 고쳐지므로, 시작 시점의 값을 증거로 읽으면 지적이 도착하기 전에 초록이 된다.
 #
 # 1 만 보던 시절에는 2 로 끝난 PR 이 영영 pending 이었다. **깨끗한 PR 일수록 막히는**
 # 방향으로 틀렸고, 그래서 2 를 같이 본다.
@@ -61,8 +70,13 @@ on:
     types: [created, edited, deleted]
   # 지적이 없을 때 코덱스가 남기는 것은 리뷰가 아니라 이슈 코멘트다. 이 트리거가 없으면
   # 게이트를 다시 돌릴 이벤트가 아무것도 오지 않는다.
+  #
+  # `edited` 가 같이 있어야 하는 이유: 코덱스는 리뷰를 시작할 때 요약 코멘트를 올리고
+  # (`status: running`), 끝나면 **같은 코멘트를 고쳐서** 결과를 적는다. created 만 보면
+  # 게이트가 읽는 것은 언제나 시작 시점의 running 이고, 끝난 것을 알려 줄 이벤트가 오지
+  # 않는다. 깨끗한 리뷰가 15 분 스윕까지 pending 으로 남는다.
   issue_comment:
-    types: [created]
+    types: [created, edited]
   # "Resolve conversation" 은 어떤 트리거도 만들지 않는다. 그래서 스레드를 다 닫아도
   # failure 가 그대로 굳고, 풀어 줄 이벤트가 정의상 오지 않는다. 한 바퀴에 열린 PR 전부를
   # 다시 읽지만, 판정이 그대로면 아무것도 쓰지 않으므로 상태 이력은 조용하다.
@@ -278,7 +292,22 @@ jobs:
                   | select(.body | contains("Reviewed commit") and contains($short)) ] | length
           ' <<<"$COMMENTS")
 
-          REVIEWED=$((REVIEWS + CLEAN))
+          # 3. 요약 코멘트에 박힌 구조화된 상태. 문자열을 긁는 대신 값을 읽는다.
+          #    `capture` 가 안 맞거나 JSON 이 깨져 있으면 `?` 로 조용히 버린다. 증거가
+          #    하나 줄어들 뿐 없는 것이 있는 것으로 바뀌지는 않는다.
+          DONE=$(jq --arg bot "$BOT_Q" --arg sha "$HEAD_SHA" '
+            [ .[]
+              | select(.login == $bot)
+              | .body
+              | select(test("codex-review-state:v1"))
+              | (capture("codex-review-state:v1 (?<j>\\{.*\\})").j | fromjson)?
+              | select(.code_review.commit_sha == $sha)
+              | select((.code_review.status // "") as $st
+                       | $st != "" and $st != "running")
+            ] | length
+          ' <<<"$COMMENTS")
+
+          REVIEWED=$((REVIEWS + CLEAN + DONE))
 
           if [ -n "$CURSOR" ]; then
             # 세다 만 수로는 아무 말도 할 수 없다. 통과시키지 않는 쪽으로 끝낸다.
