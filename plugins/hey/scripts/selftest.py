@@ -2396,6 +2396,20 @@ def main() -> int:
     code, out = run([hey, "progress", "--project", "second"], env, proj)
     check("add --init: a fresh ledger has no items, not three",
           "0/0 boxes" in out or "no checklist" in out, out)
+
+    # Three figures counted three populations for one ledger: `doctor` and the phase table
+    # took every item, while the done/wip/todo line quietly dropped the ones nobody had
+    # estimated yet. The fixture holds two of those on purpose (`Groundwork`, and the
+    # blocker), so the breakdown fell two short of the total printed two lines above it,
+    # with nothing on screen saying which number to believe. Read out of the output rather
+    # than asserted as literals, so adding a fixture item does not make this fail.
+    code, out = run([hey, "progress", "--phases"], env, proj)
+    states = re.search(r"items\s+(\d+) done . (\d+) in progress . (\d+) not started", out)
+    rows = re.findall(r"^\s{4}\S+\s+(\d+) items", out, re.M)
+    check("progress: every item lands in done, in progress or not started",
+          bool(states) and bool(rows)
+          and sum(int(g) for g in states.groups()) == sum(int(r) for r in rows),
+          f"{states and states.groups()} vs {rows}\n{out}")
     code, out = run([hey, "remove", "second"], env, proj)
     check("remove: unregisters and keeps the ledger",
           code == 0 and "unregistered: second" in out, out)
