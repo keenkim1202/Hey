@@ -34,8 +34,19 @@ jobs:
       matrix:
         # 3.9 on Linux pins the floor the README claims. The current release runs on both
         # platforms, which is also what proves the scripts are not macOS-only.
+        #
+        # The floor names its runner outright. `ubuntu-latest` moved to 26.04, which
+        # `setup-python` has no 3.9 build for, so the job that exists to hold the floor
+        # was the one the move broke:
+        #   The version '3.9' with architecture 'x64' was not found for Ubuntu 26.04.
+        # Nothing in the repository had changed. 3.9 is published for 22.04 and 24.04
+        # only, and 24.04 is the later LTS of the two.
+        #
+        # The 3.13 job stays on `ubuntu-latest` on purpose. Tracking the newest runner is
+        # what that label is for, and the current release is the half that can afford to
+        # follow it.
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python: '3.9'
           - os: ubuntu-latest
             python: '3.13'
