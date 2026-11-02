@@ -811,10 +811,18 @@ class Ledger:
         Adding subitems makes the fraction fall without anything being undone, which is the
         clearest sign it was never a completion rate: discovering scope is not regressing.
         """
+        # The effort sums take only estimated items, because `5 MD / AI 0` is a deliberate
+        # answer and averaging it in would be inventing one. The **counts** take every
+        # item: an item nobody estimated yet is still an item, and still todo or wip or
+        # done. Filtering it here is what made `done + wip + todo` fall short of the
+        # number `doctor` and the phase table print for the same ledger, with nothing on
+        # screen to say which figure was the honest one. Missing estimates are reported by
+        # `doctor`, which is where that belongs.
         scoped = [i for i in self.items if i["ai"]]
         cb_done = sum(self.boxes(i)[0] for i in self.items)
         cb_total = sum(self.boxes(i)[1] for i in self.items)
-        by_state = {s: [i for i in scoped if self.state(i) == s] for s in (S.DONE, S.WIP, S.TODO)}
+        by_state = {s: [i for i in self.items if self.state(i) == s]
+                    for s in (S.DONE, S.WIP, S.TODO)}
         return {
             "cb_done": cb_done,
             "cb_total": cb_total,
