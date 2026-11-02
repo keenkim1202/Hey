@@ -1624,13 +1624,45 @@ def cmd_doctor(args, cfg):
                             f"Rewording one banks its already-closed boxes a second time, "
                             f"on the day of the edit, and that day cannot be recomputed "
                             f"afterwards. Adding an id now is free; after a rename it is late")
+            # The convention says estimates live on the item line, and the parser obeys it:
+            # a subitem is read for `[AI n]` and nothing else. So `5 MD / AI 2.5` written
+            # one line too low is not an error anywhere -- it is simply never looked at,
+            # and the total does not move. That is the one shape of this mistake nobody can
+            # catch by reading the number, because the number looks the way it always did.
+            #
+            # The misplaced-decimal check already catches `[AI 3]` typed for `[AI 0.3]`.
+            # This is the same mistake one line lower, and it was the quiet one.
+            stray = [(i, t) for i in ledger.items
+                     for t in i["kid_text"] if Ledger.EST.search(t)]
+            if stray:
+                it, txt = stray[0]
+                say("warn", f"{len(stray)} subitem(s) carry an `N MD / AI M` estimate, "
+                            f"which is read from the item line only and counted nowhere: "
+                            f"{it['title']} / {txt.strip()[:44]}. Move it to the item line, "
+                            f"or claim a share of the item's own estimate with `[AI n]`")
             # Words used to classify an item as blocked on their own. They no longer do, so
             # a ledger written under the old rule would go quiet about its blockers. Named
             # rather than guessed at: `doctor` still reads the words, and says which lines
             # look like they want the marker.
+            # Read across the subitems too. The item line names the deliverable and the
+            # subitems hold the work, so "waiting on the proxy team" gets written where the
+            # work is -- and a check that only read the item line passed over exactly the
+            # line a person would write it on.
+            #
+            # Open subitems only. A closed one records a wait that **ended**: `- [x] waiting
+            # on API credentials` is the note that the credentials arrived. Reading it would
+            # keep the warning up until the whole item finishes, with no edit that clears it
+            # short of rewriting history, and a warning that cannot be cleared is one that
+            # gets ignored along with the real ones.
+            def waiting_text(i):
+                yield i["text"]
+                for done, t in zip(i["kids"], i["kid_text"]):
+                    if not done:
+                        yield t
+
             unmarked = [i for i in ledger.items
                         if ledger.state(i) != S.DONE and ledger.key(i) not in blocked
-                        and S.blocker_hit(i["text"])]
+                        and any(S.blocker_hit(t) for t in waiting_text(i))]
             if unmarked:
                 say("warn", f"{len(unmarked)} item(s) read as waiting but carry no "
                             f"`[blocked]` marker and sit outside a blocker section, so "

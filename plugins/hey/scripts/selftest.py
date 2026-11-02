@@ -477,6 +477,68 @@ assert g['total_ai'] == 1.0, g['total_ai']
 assert g['cb_total'] == 2, g['cb_total']
 """
 
+SUBITEM_BLIND_SPOT_PROBE = """
+import contextlib, io, os, sys, tempfile
+from pathlib import Path
+
+# Its own ledger rather than the shared fixture. Box counts and share arithmetic there are
+# load-bearing for most of the checks in this file, so adding two rows to it to exercise
+# two warnings breaks a dozen assertions that have nothing to do with either.
+d = Path(tempfile.mkdtemp())
+os.environ['HEY_HOME'] = str(d / 'home')
+sys.path.insert(0, {here!r})
+import hey
+
+p = d / 'TASKS.local.md'
+# Both mistakes sit on a subitem, which is the one place the convention forbids and the
+# checks did not read. The estimate moves no total and the waiting word blocks nothing, so
+# neither leaves a trace in any number a person could compare against.
+p.write_text('## Notes\\n\\n'
+             '## Work log\\n\\n'
+             '### Next up\\n\\n'
+             '## Summary\\n\\n'
+             '## P0. Real (1 MD / AI 1.0)\\n\\n'
+             '- [ ] **Host item** `[id host]` - 1 MD / AI 1.0\\n'
+             '  - [ ] an estimate written one line too low - 5 MD / AI 2.5\\n'
+             '  - [ ] pending the proxy team, said in prose and marked nowhere\\n'
+             '- [ ] **Cleared item** `[id cleared]` - 1 MD / AI 1.0\\n'
+             '  - [x] waiting on the API credentials\\n'
+             '  - [ ] write the client\\n',
+             encoding='utf-8')
+
+cfg = {{'projects': [{{'name': 't', 'root': str(d), 'ledger': str(p)}}],
+       'scope': 'current'}}
+# `cmd_doctor` ends in `sys.exit`, so the SystemExit has to be caught here. Without it the
+# probe stops on that line with a zero status and every assertion below is skipped -- the
+# test passes whether the checks exist or not, which is the worst outcome available.
+buf = io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf):
+        hey.cmd_doctor(None, cfg)
+except SystemExit:
+    pass
+out = buf.getvalue()
+
+assert 'subitem(s) carry an `N MD / AI M`' in out, out
+assert 'Host item' in out, out
+waiting = out.split('read as waiting but carry no')
+assert len(waiting) == 2, out
+assert 'Host item' in waiting[1][:200], out
+
+# A closed subitem records a wait that ended. `- [x] waiting on the API credentials` is the
+# note that they arrived, so reading it would hold the warning up until the whole item
+# finishes, with no edit short of rewriting history that clears it. A warning nobody can
+# clear gets ignored along with the real ones.
+assert 'Cleared item' not in waiting[1][:200], out
+assert '1 item(s) read as waiting' in out, out
+
+# Two item lines at `AI 1.0`, and the stray `AI 2.5` on a subitem is not in the total --
+# which is the whole reason it had to be named. Nothing on screen moved when it was
+# written, so no number a person could compare against would ever show it.
+led = hey.Ledger(cfg['projects'][0])
+assert led.progress()['total_ai'] == 2.0, led.progress()
+"""
+
 COLLECT_LOCK_PROBE = """
 import fcntl, json, os, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -1985,6 +2047,8 @@ def main() -> int:
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     two_days_ago = (date.today() - timedelta(days=2)).isoformat()
     probes = {
+        "doctor: a mistake written on a subitem is named, not absorbed":
+            SUBITEM_BLIND_SPOT_PROBE.format(here=str(HERE)),
         "stats": STATS_PROBE.format(yesterday=yesterday, today=today, here=str(HERE)),
         "display width": WIDTH_PROBE.format(here=str(HERE)),
         "card width: env, clamp and fallback": CARD_WIDTH_PROBE.format(here=str(HERE)),
