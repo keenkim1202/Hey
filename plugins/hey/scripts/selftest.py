@@ -1868,6 +1868,31 @@ def backfill_guidance_checks() -> list:
     return out
 
 
+def template_zero_checks() -> list:
+    """The ledger template may not state a progress figure it has not counted.
+
+    `0/0` and `0.0 / 0 AI-days closed` sat in the header of every ledger `--init` creates,
+    and only `/hey-sync` ever writes over them. So a project could be set up, worked for a
+    day and recorded, and the file a person opens would still read zero -- the premise of
+    this tool being that the markdown is what a human reads. A zero is the worst available
+    default here, because an empty cell reads as "not filled in" while `0/0` reads as an
+    answer. The summary table two sections down already leaves its cells empty.
+
+    Matched on the label rather than on the whole line, so rewording the prose around it
+    does not quietly drop the check.
+    """
+    out = []
+    tpl = HERE.parent / "templates" / "LEDGER.md"
+    for ln in tpl.read_text(encoding="utf-8").split("\n"):
+        if not ln.startswith("**Progress ("):
+            continue
+        value = ln.split(":", 1)[-1]
+        if any(ch.isdigit() for ch in value):
+            out.append(("the template's progress header states a figure nothing has "
+                        "counted yet", ln.strip()))
+    return out
+
+
 def static_checks() -> list:
     """Manifest and frontmatter checks. No fixture, no subprocess, no network.
 
@@ -2140,7 +2165,9 @@ def main() -> int:
                          ("the pinned version has a changelog entry", version_checks),
                          ("no skill writes what the wording rules forbid", wording_checks),
                          ("no skill recovers a past day unsafely",
-                          backfill_guidance_checks)):
+                          backfill_guidance_checks),
+                         ("the template states no figure it has not counted",
+                          template_zero_checks)):
         problems = probe()
         for label, detail in problems:
             check(f"static: {label}", False, detail)

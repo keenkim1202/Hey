@@ -1,9 +1,14 @@
 # <project> work ledger (local only)
 
-**Progress (boxes): 0/0** — every checkbox in this file. A count, not a completion
-rate: one box may be a typo fix and the next a subsystem.
+**Progress (boxes): `<counted by /hey-sync>`** — every checkbox in this file. A count,
+not a completion rate: one box may be a typo fix and the next a subsystem.
 
-**Progress (estimate): 0.0 / 0 AI-days closed · 0 in progress · 0 left**
+**Progress (estimate): `<counted by /hey-sync>`**
+
+> These two lines are the only numbers in this file that a script writes. Until
+> `/hey-sync` has run they hold a stand-in, not a zero: `0/0` reads as an answer, and
+> a ledger that has never been synced would otherwise state one. The summary table
+> below leaves its cells empty for the same reason.
 
 > Do not commit this file. Add it to `.git/info/exclude` and keep it local.
 >
